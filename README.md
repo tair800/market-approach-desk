@@ -114,11 +114,19 @@ cd n8n && docker compose up -d    # n8n on :5678, then import market-approach.wo
 
 ## What you are looking at
 
-| | |
-|---|---|
-| **Board** | placements, the carrier approach matrix, state per carrier, overdue follow-ups, reply classification, block reasons |
-| **Comparison** | the kill-test result, rendered from the run that produced it |
-| **Audit** | the append-only trail — who approached this carrier, and when |
+**The board** — every placement and the carrier panel behind it. One row is one approach: one
+carrier at one stage, which is the identity the database holds unique.
+
+![The placement board](docs/screenshots/board.png)
+
+**The comparison** — the kill-test result, rendered from the run that produced it rather than typed
+into a table.
+
+![Two arms, one harness](docs/screenshots/comparison.png)
+
+**The audit trail** — append-only. Who approached this carrier, and when.
+
+![The audit trail](docs/screenshots/audit.png)
 
 ---
 
