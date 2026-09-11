@@ -26,8 +26,12 @@ class Settings(BaseSettings):
 
     environment: str = Field(default="local", pattern="^(local|ci|staging|production)$")
 
-    #: Publishes the comparison endpoint that runs both arms. Off outside the demonstration: it
-    #: seeds and resets data, which is not something a production deployment should offer.
+    #: Surfaced on ``/api/v1/meta`` only, where the console renders a "demo data" badge so a
+    #: visitor knows the board is seeded rather than a live panel. **It gates no route**: every
+    #: endpoint in `api.py` is a read and is registered unconditionally. An earlier comment here
+    #: claimed it published a comparison endpoint that seeds and resets data — no such endpoint was
+    #: ever written, and a reviewer caught the comment rather than a test, because prose is not
+    #: type-checked.
     demo_mode: bool = Field(default=False)
 
     #: Fail-closed. An empty list means no browser origin may call the API directly, which is

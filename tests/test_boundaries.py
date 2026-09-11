@@ -251,9 +251,14 @@ def test_a_blocked_approach_is_terminal() -> None:
     assert ApproachState.SENT in TERMINAL_STATES
     assert ApproachState.ELIGIBLE not in TERMINAL_STATES
     assert ApproachState.CLAIMED not in TERMINAL_STATES, (
-        "a claim is a reservation this system can release; treating it as terminal would strand "
-        "an approach whose scheduler died between claiming and sending"
+        "a claim is a reservation, not an approach the carrier has seen; it must never satisfy the "
+        "already-approached rule"
     )
+    # The first version of that message claimed this membership prevents a stranded claim. It does
+    # not, and a reviewer was right to call it unfalsifiable: visibility to the scheduler is decided
+    # by `due_at`, which the claim clears, so an approach whose scheduler dies between claiming and
+    # sending is stranded either way. That limitation is disclosed in README.md and
+    # PROJECT_STATUS.md rather than papered over here.
 
 
 # ======================================================================================

@@ -113,8 +113,11 @@ def idempotency_key(identity: ApproachIdentity) -> str:
 
     Handed to the carrier receiver so that a retry of an *accepted* approach is recognisably the
     same send rather than a second one. It is deliberately **not** what prevents the duplicate —
-    the database constraint is — because a receiver that ignores the header would then be the only
-    thing standing between a broker and a blocked market.
+    the claim transaction is — because a receiver that ignores the header would then be the only
+    thing standing between a broker and a blocked market. (An earlier version of this sentence said
+    the database *constraint* prevents it. The constraint guarantees one row per identity, which is
+    what makes locking a row mean something; it never fires at run time, because nothing but the
+    seeder inserts an approach.)
 
     Derived rather than random for the reason the whole project exists: a key that changed between
     two runs of the same work would make two approaches look like two pieces of work.

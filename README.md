@@ -50,15 +50,19 @@ claim (ONE transaction: SELECT … FOR UPDATE SKIP LOCKED + every eligibility ru
    → send → record outcome
 ```
 
-Three mechanisms, and each covers what the others cannot:
+Two mechanisms, and each covers what the other cannot:
 
 1. **`SELECT … FOR UPDATE SKIP LOCKED`** — a concurrent scheduler does not see a claimed row. It
    skips rather than blocks, so two workers share the queue instead of serialising on it.
 2. **Every eligibility rule evaluated *inside* that transaction.** A rule evaluated before the claim
    is a rule evaluated against state that may already have changed — the n8n failure, one layer
    down.
-3. **A unique constraint on `(placement_id, market_id, stage)`** underneath both, as the thing that
-   cannot be argued with.
+
+A unique constraint on `(placement_id, market_id, stage)` sits underneath both, and it is worth
+being exact about its job: it is a **schema invariant, not a third runtime check**. It guarantees
+one row per identity, which is what makes locking that row equivalent to claiming the approach. It
+never fires during the race, because nothing but the seeder inserts an approach. A review caught the
+first version of this list calling it a third mechanism.
 
 The claim also clears `due_at`, which means the headline kill test alone cannot tell the row lock
 from the cleared column — it would pass with `SKIP LOCKED` deleted. So a second test forces two
@@ -145,6 +149,11 @@ into a table.
   `(placement, market, stage)` under the tested contract*, measured at the receiver. Email delivery
   is not exactly-once and this repository never says it is.
 - **No live model has been called.** See above.
+- **A scheduler that dies between claim and send strands that approach.** The claim commits
+  `state = claimed` with `due_at` cleared, and nothing reclaims it — there is no lease and no
+  stale-claim sweep. The failure direction is deliberate: the approach is **not sent** rather than
+  sent twice, which is the safe side of an irreversible act. Recovery is manual, and the row is
+  visible as `claimed` on the board. Found by a review, not by a test.
 - **The carrier receiver is in-process.** It stands where an underwriter's mailbox would; there is
   no real mail provider in this repository, so a deployment cannot accidentally acquire one.
 

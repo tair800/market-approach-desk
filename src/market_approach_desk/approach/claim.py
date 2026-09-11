@@ -14,9 +14,13 @@ This module closes it with two things that must happen together:
    claim is a rule evaluated against state that may already have changed — which is the n8n failure
    reproduced one layer down, and is the mistake this module is most likely to be edited into.
 
-The unique constraint on the business identity sits underneath both as the thing that cannot be
-argued with. `SKIP LOCKED` prevents the ordinary race; the constraint refuses the extraordinary one
-that gets past it. A single mechanism would be a single point of failure for an irreversible act.
+The unique constraint on the business identity sits underneath both, but as a **schema invariant
+rather than a third runtime check**, and a reviewer was right to make this precise. It guarantees
+exactly one row per `(placement_id, market_id, stage)`, which is what makes locking one row
+equivalent to claiming the approach — without it, two rows for one identity would be two locks and
+`SKIP LOCKED` would not help. Nothing in this repository inserts a `MarketApproach` at run time;
+only the seeder does. So the constraint is never *exercised* by either arm and is not what refuses
+the race the kill test measures. The claim transaction is.
 """
 
 from __future__ import annotations
@@ -172,8 +176,17 @@ async def _conflict_for(
     Ordered from the cheapest and most decisive downwards, and each returns the reason rather than
     a boolean: "blocked" without a reason is a support ticket.
     """
-    # 1. Already approached at this stage. The unique constraint makes a *duplicate row*
-    #    impossible; this makes a duplicate *send* impossible, which is the commercial failure.
+    # 1. Already approached at this stage.
+    #
+    #    **This branch is unreachable today, and saying so is better than implying otherwise.**
+    #    `uq_market_approach_business_identity` makes a second row for one identity impossible, so
+    #    a query for "another row with my identity in a terminal state" can never match. A reviewer
+    #    found it advertised as a live rule.
+    #
+    #    Kept rather than deleted because it is the rule that has to exist the moment an approach
+    #    can be created at run time — today only the seeder inserts one — and because deleting it
+    #    would leave the reader to rediscover why the constraint alone is sufficient. It is free:
+    #    one indexed lookup that returns nothing.
     already = (
         await session.execute(
             select(MarketApproach.id).where(

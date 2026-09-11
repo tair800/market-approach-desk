@@ -123,8 +123,10 @@ driven, and that is a real weakening of the evidence. What follows is the whole 
 - An execution reads its work at the start and carries each item as a **detached snapshot**. No
   later node re-reads the row, because no n8n node would.
 - **No lock spans executions.** n8n offers a concurrency *limit*, which bounds how many executions
-  run; it has no equivalent of `SELECT … FOR UPDATE SKIP LOCKED`, which bounds what each one may
-  claim. Those are different guarantees and only the second prevents this failure.
+  run; that is a different guarantee from bounding what each one may *claim*, and only the second
+  prevents this failure. n8n's engine offers no claim primitive of its own — a workflow gets one
+  only by writing it as SQL inside a Postgres node, which this workflow's `Read Due Approaches`
+  does not do. See "Why the failure is the shape" below.
 - **No transaction spans read → send → write.** Each Postgres node runs one statement in its own
   session and commits it. Each statement is atomic; the sequence is not.
 - **The state write happens after the irreversible act**, because the write is what records it.
@@ -225,17 +227,54 @@ dead-letter path — it is a stalled placement that looks busy.
 
 ---
 
-## Why the failure is the execution model, not the builder
+## Why the failure is the shape, not the builder — and not n8n itself
 
-There is no version of this workflow in which the eligibility check is *inside* the claim, because
-n8n has no claim to put it inside. `Eligible To Approach?` re-asserts the state — which is exactly
-what a careful builder does — and reads a snapshot detached three nodes earlier. `Mark Approach Sent`
-runs after the send because it is recording the send. Adding `AND state = 'eligible'` to that
-`UPDATE` would change nothing that matters: by then the email has arrived, and a guard there could
-only make the table disagree with the underwriter's inbox, which is the quieter failure rather than
-the smaller one.
+In *this* workflow's shape the eligibility check cannot be inside a claim, because there is no
+claim. `Eligible To Approach?` re-asserts the state — which is exactly what a careful builder does —
+and reads a snapshot detached three nodes earlier. `Mark Approach Sent` runs after the send because
+it is recording the send. Adding `AND state = 'eligible'` to that `UPDATE` would change nothing that
+matters: by then the email has arrived, and a guard there could only make the table disagree with
+the underwriter's inbox.
 
-That is the whole finding. Not *n8n is bad* — the workflow above is a reasonable piece of
-engineering and would run a real desk adequately for a long time. The finding is that **a workflow
-engine without a claim boundary cannot make an irreversible act happen at most once**, and that the
-cost of finding this out in production is a market that cannot be re-approached.
+**That shape is not the only shape n8n can express, and this file will not pretend otherwise.**
+
+An earlier version of this section said *"there is no version of this workflow in which the
+eligibility check is inside the claim, because n8n has no claim to put it inside"*, and generalised
+it to *"a workflow engine without a claim boundary cannot make an irreversible act happen at most
+once"*. **That is false, and this repository's own workflow JSON refutes it.** `Read Due Approaches`
+is a Postgres node in `executeQuery` mode running free-text SQL — the same node type and mode
+`Mark Approach Sent` already uses for `UPDATE … RETURNING`. Replacing its `SELECT` with a claiming
+statement:
+
+```sql
+UPDATE market_approach SET state = 'claimed', due_at = NULL
+WHERE id IN (
+    SELECT a.id FROM market_approach a
+    WHERE a.state = 'eligible' AND a.due_at <= NOW() AND …   -- the same eligibility predicates
+    ORDER BY a.due_at LIMIT 50 FOR UPDATE SKIP LOCKED
+)
+RETURNING id AS approach_id, placement_id, market_id, stage;
+```
+
+…evaluates every eligibility rule inside a claim, atomically, **without leaving n8n**.
+
+**This repository has not built or measured that variant, and claims nothing about it.** ADR-001
+said that if the n8n arm could be made safe inside n8n, the result would be published; naming the
+route and admitting there is no measurement behind it is the honest discharge of that promise.
+A reviewer found the overclaim, not a test — prose is not type-checked.
+
+So the finding the numbers actually support is narrower, and more useful:
+
+> **The workflow shape a builder naturally reaches for — read, decide, act, record — duplicates an
+> irreversible act under overlapping executions. The way out is to move the claim into a single SQL
+> statement, at which point the reliability boundary lives in the database and the workflow engine
+> is a scheduler wrapped around it.**
+
+What that variant would still not give you is everything *after* the claim: a crash between the
+claim and the send, `Retry On Fail` replaying a send that landed, bounded retries, and a dead-letter
+path a person is required to resolve. That is the Python arm's remaining margin, and it is analysed
+here rather than measured.
+
+Not *n8n is bad* — the workflow above is a reasonable piece of engineering and would run a real desk
+adequately for a long time. The cost of finding this out in production is a market that cannot be
+re-approached.

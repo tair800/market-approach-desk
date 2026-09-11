@@ -11,7 +11,10 @@ import { formatInstant } from "@/lib/states";
  *
  * Fetched from the static path rather than read off disk so the file the browser sees is the file
  * the run wrote, on a platform that serves `public/` from a CDN as readily as from local disk. A
- * 404 is the ordinary state of a fresh clone, not an error: the kill test has not been run.
+ * A 404 is not an error: it means no run has been published. A fresh clone DOES ship
+ * `public/killtest.json` — the deployed console cannot run pytest, so it renders a committed
+ * measurement carrying its own `ran_at` — so the empty state is what a reader sees only if
+ * that file is removed or a run has not written it yet.
  */
 
 type Load =

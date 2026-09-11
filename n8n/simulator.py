@@ -217,7 +217,7 @@ SELECT a.id                                                 AS approach_id,
            JOIN carrier_reply reply ON reply.approach_id = declined.id
            WHERE declined.placement_id = a.placement_id
              AND declined.market_id    = a.market_id
-             AND reply.classification  = 'decline'
+             AND reply.classification  = 'declined'
              AND reply.received_at     > :now - INTERVAL '90 days'
        )                                                    AS declined_within_window
 FROM market_approach a
@@ -526,9 +526,11 @@ class N8nWorkflowExecution:
 
         **This is the defect, and nobody made a mistake to produce it.** The IF re-asserts the
         state, which is exactly what a careful builder does; it reads ``item``, and ``item`` was
-        detached at ``Read Due Approaches``. There is nowhere in n8n to put this test that would be
-        *inside* a claim, because there is no claim — so an execution that has already sent is
-        invisible here. The Python arm answers the same questions inside the transaction that
+        detached at ``Read Due Approaches``. There is nowhere in *this workflow's shape* to put this
+        test that would be *inside* a claim, because its read is a plain ``SELECT`` — a claiming
+        ``UPDATE … RETURNING`` in that same Postgres node would change that, and is not modelled
+        here (see ``README.md``, "Why the failure is the shape") — so an execution that has
+        already sent is invisible here. The Python arm answers the same questions inside the transaction that
         reserves the row, and that single difference is the whole comparison.
         """
         eligible = (

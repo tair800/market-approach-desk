@@ -16,8 +16,9 @@ services:
         value: 10000
       - key: MAD_ENVIRONMENT
         value: staging
+      # The public demonstration serves seeded data, so the badge belongs on.
       - key: MAD_DEMO_MODE
-        value: "false"
+        value: "true"
       # Fail-closed. The console reaches this API server-side and needs no browser origin.
       - key: MAD_CORS_ALLOW_ORIGINS
         value: "[]"

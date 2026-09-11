@@ -44,7 +44,7 @@ migrate-down: ## Roll back to base, to prove the migration is reversible
 demo: migrate ## Reset and seed the local database with the demonstration data
 	MAD_POSTGRES_DSN=$(DSN) uv run python -m market_approach_desk.demo
 
-api: ## Serve the API against the seeded database, with the demonstration controls on
+api: ## Serve the API against the seeded database, flagged in the console as demo data
 	MAD_POSTGRES_DSN=$(DSN) MAD_DEMO_MODE=true \
 	  uv run uvicorn "market_approach_desk.api:create_app" --factory --port 8000
 
