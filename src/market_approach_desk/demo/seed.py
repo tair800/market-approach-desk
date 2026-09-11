@@ -26,7 +26,7 @@ from market_approach_desk.domain.identity import (
     idempotency_key,
 )
 
-__all__ = ["RACE_MARKET", "SEED_EPOCH", "reset", "seed"]
+__all__ = ["RACE_MARKET", "SEED_EPOCH", "bootstrap", "reset", "seed"]
 
 #: A fixed instant, so `due_at` and `follow_up_at` are reproducible and a follow-up is reliably
 #: overdue in the demonstration rather than overdue only on some days.
@@ -177,3 +177,25 @@ async def seed(engine: AsyncEngine, *, now: dt.datetime = SEED_EPOCH) -> None:
 
             # Thames (the race target) and Pellworth stay eligible and due.
             session.add(approach)
+
+
+async def bootstrap(engine: AsyncEngine) -> bool:
+    """Seed **only if the database is empty**. Never resets. Returns whether it seeded.
+
+    This is the deployed demonstration's path, and it is deliberately not :func:`reset` +
+    :func:`seed`. That pair truncates every table, which is why the ``python -m …demo`` entry point
+    refuses any DSN that is not local — a deploy hook that wiped a database on every restart would
+    be the same destructive command wearing a container.
+
+    So the rule here is the weakest one that still produces a usable board: if a single approach
+    exists, do nothing at all. A container restart, a redeploy and a scale event are then all
+    no-ops, and anything a visitor did to the demonstration survives them.
+    """
+    async with engine.connect() as connection:
+        existing = (
+            await connection.execute(text("SELECT count(*) FROM market_approach"))
+        ).scalar_one()
+    if existing:
+        return False
+    await seed(engine)
+    return True

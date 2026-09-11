@@ -43,6 +43,29 @@ resolved, because resolving it means paying for a release hook.
 A failed migration stops the container (`set -e`), the deploy stays unhealthy, and the app never
 serves against a schema it does not expect.
 
+### The demonstration data is seeded on boot too, and only into an empty database
+
+`alembic upgrade head` creates the schema and leaves it empty, so a fresh Neon database would serve
+a board with nothing on it. The entrypoint therefore also runs
+`python -m market_approach_desk.demo.bootstrap`, gated on `MAD_DEMO_MODE=true`.
+
+**It is deliberately not the `python -m market_approach_desk.demo` path.** That one is
+`reset()` + `seed()`, which `TRUNCATE`s every table — which is why it refuses any DSN that is not
+`localhost`. A boot hook doing that would work perfectly and wipe the board every time Render woke
+the free instance from sleep. `bootstrap()` instead counts `market_approach` and returns without
+writing if any row exists; it contains no `DELETE` and no `TRUNCATE` on any path.
+
+Verified by booting the image twice against one database: the first boot logged
+`seeded the demonstration`, the second logged `already populated; nothing written`, and
+`/api/v1/stats` was byte-identical across both. Pinned by
+`test_the_deploy_bootstrap_seeds_an_empty_database_once_and_never_again`, which compares every table
+before and after the second call and was verified to go red when `bootstrap` is mutated into the
+reset-every-boot version.
+
+The seeded board is five approaches across one placement, with an empty audit trail — the scheduler
+has not run yet, and the console's audit screen renders its empty state, which is exactly what the
+committed screenshot shows.
+
 ### Owner-set configuration, by name
 
 No value appears in this repository.
@@ -84,5 +107,18 @@ n8n instance. That is stated on the screen itself, with the timestamp of the run
 
 ## Status
 
-**Not yet deployed.** Creating the Render service and the Neon database is owner account action. The
-blueprint and the Dockerfile are verified; the deploy step needs an account.
+**Not yet deployed.** Creating the Neon database, the Render service and the Vercel project is owner
+account action, and nothing in this repository can perform it.
+
+What is verified, locally and end to end against the real image:
+
+| Step | Evidence |
+|---|---|
+| Image builds | `docker build -t mad-api:deploy .` succeeds from a clean context |
+| Migrations apply on boot | `Running upgrade  -> 8c024e94d080, approach schema` in the container log |
+| Demonstration seeds once | boot 1 `seeded the demonstration`; boot 2 `already populated; nothing written` |
+| The four routes the console reads | `/api/v1/placements`, `/api/v1/audit`, `/api/v1/stats`, `/api/v1/meta` all answer 200 against the bootstrapped database |
+| Liveness and readiness | `/healthz` and `/readyz` answer 200; `/readyz` reaches PostgreSQL |
+
+`/api/v1/meta` reports `revision` from `RENDER_GIT_COMMIT`, which Render sets and a local `docker
+run` does not — so it is empty locally and populated once deployed.

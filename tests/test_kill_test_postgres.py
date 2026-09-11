@@ -29,6 +29,7 @@ from collections.abc import AsyncIterator, Sequence
 import pytest
 import pytest_asyncio
 from n8n.simulator import run_workflow_pair
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -256,4 +257,45 @@ async def test_skip_locked_is_what_does_the_work_not_the_cleared_due_at(
         f"both sessions claimed the same approach ({claimed_by}): SELECT … FOR UPDATE SKIP LOCKED "
         "is not doing the work the README says it does, and the headline kill test was passing on "
         "the cleared due_at alone"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_deploy_bootstrap_seeds_an_empty_database_once_and_never_again(
+    engine: AsyncEngine,
+) -> None:
+    """The deployed demonstration runs on every boot. It must be a no-op on every boot but one.
+
+    `deployment/entrypoint.sh` calls ``python -m market_approach_desk.demo.bootstrap`` after
+    ``alembic upgrade head``, so this code runs on the first deploy, on every redeploy, and on
+    every restart the platform decides to perform. The dangerous version of that hook is
+    ``reset() + seed()``: it would work perfectly and silently wipe the board every time the free
+    instance woke up. So the property under test is not *does it seed* — it is **does the second
+    run write nothing at all**, measured by comparing every table before and after.
+    """
+    from market_approach_desk.demo.seed import bootstrap
+
+    async def rows() -> dict[str, int]:
+        counts: dict[str, int] = {}
+        async with AsyncSession(engine) as session:
+            for table in ("placement", "market", "market_approach", "carrier_reply"):
+                counts[table] = (
+                    await session.execute(sa_text(f"SELECT count(*) FROM {table}"))
+                ).scalar_one()
+        return counts
+
+    # The autouse fixture leaves a seeded database; empty it so the first branch is the real one.
+    await reset(engine)
+    assert await rows() == dict.fromkeys(
+        ("placement", "market", "market_approach", "carrier_reply"), 0
+    )
+
+    assert await bootstrap(engine) is True, "an empty database was not seeded"
+    after_first = await rows()
+    assert after_first["market_approach"] > 0, "bootstrap reported success and seeded nothing"
+
+    assert await bootstrap(engine) is False, "a populated database was seeded a second time"
+    assert await rows() == after_first, (
+        "the second bootstrap changed the database: a redeploy or a restart would not be a no-op, "
+        "and the deployed demonstration would reset under a visitor"
     )
