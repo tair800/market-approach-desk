@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_VERSION: "0.11.15"
+
+jobs:
+  checks:
+    name: Lint, type check and the offline suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest
+
+  killtest:
+    name: The kill test — both arms against real PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mad
+          POSTGRES_PASSWORD: mad_ci_ephemeral
+          POSTGRES_DB: mad
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mad -d mad"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    env:
+      MAD_POSTGRES_DSN: postgresql://mad:mad_ci_ephemeral@localhost:5432/mad
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Apply migrations, and prove they roll back
+        run: |
+          uv run alembic upgrade head
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+      # The comparison is a standing CI step rather than a one-off measurement. If the n8n arm ever
+      # stops duplicating, this goes red and the README's claim is withdrawn rather than quietly
+      # surviving.
+      - name: Kill test
+        run: uv run pytest tests/test_kill_test_postgres.py -m integration -q --no-cov
+
+  console:
+    name: Console lint, type check, test and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npm run build

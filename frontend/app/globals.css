@@ -1,0 +1,234 @@
+@import "tailwindcss";
+
+/*
+ * A desk console, not a landing page. Dark, dense, no motion.
+ *
+ * Badge colours are written as plain classes rather than composed utility strings for two reasons:
+ * a constructed class name is invisible to Tailwind's scanner, and a badge is a piece of shared
+ * vocabulary that should have one definition. `lib/states.ts` names these and nothing else does.
+ */
+
+@theme {
+  --color-ink: #0a0d12;
+  --color-panel: #11161d;
+  --color-panel-2: #171d26;
+  --color-line: #242c38;
+  --color-line-soft: #1b222c;
+  --color-text: #e6ebf2;
+  --color-muted: #97a3b4;
+  --color-dim: #7b8799;
+  --color-accent: #6ea8fe;
+
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-text);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: #1e3a5f;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* ---- Badges -------------------------------------------------------------------------- */
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 3px;
+    border: 1px solid transparent;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  /* Approach states. Seven, each a different hue so a matrix reads at a glance. */
+  .badge-eligible {
+    background: #1a212b;
+    border-color: #2c3644;
+    color: #b8c4d4;
+  }
+  .badge-claimed {
+    background: #1e1b38;
+    border-color: #362f66;
+    color: #b3a7ff;
+  }
+  .badge-sent {
+    background: #0f2439;
+    border-color: #1d3f63;
+    color: #7cc0ff;
+  }
+  .badge-retrying {
+    background: #32250c;
+    border-color: #5c451a;
+    color: #f2b756;
+  }
+  .badge-replied {
+    background: #0d2a20;
+    border-color: #1a4a38;
+    color: #5fd6a4;
+  }
+  .badge-blocked {
+    background: #3a1418;
+    border-color: #63232a;
+    color: #ff8f9b;
+  }
+  .badge-dead {
+    background: #2e1230;
+    border-color: #56245a;
+    color: #e58ae8;
+  }
+  .badge-unknown {
+    background: #1a212b;
+    border-color: #2c3644;
+    color: #97a3b4;
+  }
+
+  /* Reply classes. Deliberately softer than the state badges: a classification is a reading of a
+     reply, not a state of the placement, and must not compete with the state column. */
+  .badge-interested,
+  .badge-declined,
+  .badge-needsinfo,
+  .badge-referred,
+  .badge-unclear {
+    font-weight: 500;
+    background: transparent;
+  }
+  .badge-interested {
+    border-color: #1f5c44;
+    color: #6bd3a6;
+  }
+  .badge-declined {
+    border-color: #6e2a31;
+    color: #ff9aa5;
+  }
+  .badge-needsinfo {
+    border-color: #6a4f1e;
+    color: #f0bd6a;
+  }
+  .badge-referred {
+    border-color: #24486e;
+    color: #86c2ff;
+  }
+  .badge-unclear {
+    border-color: #333d4c;
+    color: #a3aec0;
+  }
+
+  .badge-abstained {
+    border-color: #3b4352;
+    color: #97a3b4;
+    background: transparent;
+    font-weight: 500;
+  }
+
+  /* ---- Surfaces ------------------------------------------------------------------------ */
+
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+  }
+
+  .panel-head {
+    background: var(--color-panel-2);
+    border-bottom: 1px solid var(--color-line);
+  }
+
+  /* ---- Matrix -------------------------------------------------------------------------- */
+
+  .matrix {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .matrix th {
+    text-align: left;
+    font-weight: 600;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-dim);
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--color-line);
+    white-space: nowrap;
+  }
+
+  .matrix td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--color-line-soft);
+    vertical-align: middle;
+  }
+
+  .matrix tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* The only colour the board uses to demand action. A chase that is late is the one thing an
+     operator must not scroll past. */
+  .row-overdue {
+    background: #2a1a0b;
+  }
+
+  .row-overdue td {
+    border-bottom-color: #4a3316;
+  }
+
+  .nav-link {
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    color: var(--color-muted);
+    font-weight: 500;
+  }
+
+  .nav-link[data-active="true"] {
+    background: var(--color-panel-2);
+    border-color: var(--color-line);
+    color: var(--color-text);
+  }
+
+  .btn {
+    border: 1px solid var(--color-line);
+    background: var(--color-panel-2);
+    color: var(--color-text);
+    border-radius: 4px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .btn:disabled {
+    color: var(--color-dim);
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+}

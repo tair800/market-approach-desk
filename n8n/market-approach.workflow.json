@@ -1,0 +1,655 @@
+{
+  "name": "Market Approach Desk - Scheduled Carrier Approach",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a1f0c4d2-0001-4a10-9c31-6f0b2d7e1001",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -260,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.id                                                  AS approach_id,\n       a.placement_id,\n       a.market_id,\n       a.stage,\n       a.state,\n       a.due_at,\n       a.attempt_count,\n       p.reference                                           AS placement_reference,\n       m.name                                                AS market_name,\n       m.contact_email                                       AS underwriter_email,\n       m.within_placing_authority                            AS within_placing_authority,\n       (p.inception_on <= CURRENT_DATE + INTERVAL '14 days')  AS inception_imminent,\n       EXISTS (\n           SELECT 1\n           FROM market_approach declined\n           JOIN carrier_reply reply ON reply.approach_id = declined.id\n           WHERE declined.placement_id = a.placement_id\n             AND declined.market_id    = a.market_id\n             AND reply.classification  = 'decline'\n             AND reply.received_at     > NOW() - INTERVAL '90 days'\n       )                                                     AS declined_within_window\nFROM market_approach a\nJOIN placement p ON p.id = a.placement_id\nJOIN market    m ON m.id = a.market_id\nWHERE a.state    = 'eligible'\n  AND a.due_at IS NOT NULL\n  AND a.due_at  <= NOW()\nORDER BY a.due_at, a.id\nLIMIT 50;",
+        "options": {}
+      },
+      "id": "a1f0c4d2-0002-4a10-9c31-6f0b2d7e1002",
+      "name": "Read Due Approaches",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -40,
+        340
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "a1f0c4d2-0003-4a10-9c31-6f0b2d7e1003",
+      "name": "Loop Over Approaches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        180,
+        340
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c4d2-0004-4a10-9c31-6f0b2d7e1004",
+      "name": "Pass Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        400,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "eligible",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.within_placing_authority }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "c3",
+              "leftValue": "={{ $json.declined_within_window }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": false,
+        "options": {}
+      },
+      "id": "a1f0c4d2-0005-4a10-9c31-6f0b2d7e1005",
+      "name": "Eligible To Approach?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        400,
+        460
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c4d2-0006-4a10-9c31-6f0b2d7e1006",
+      "name": "Skip Ineligible Approach",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        620,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "identity",
+              "value": "={{ $json.placement_id }}/{{ $json.market_id }}/{{ $json.stage }}",
+              "type": "string"
+            },
+            {
+              "id": "s2",
+              "name": "idempotency_payload",
+              "value": "=mad.approach-identity.v1|{{ $json.placement_id }}|{{ $json.market_id }}|{{ $json.stage }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1f0c4d2-0007-4a10-9c31-6f0b2d7e1007",
+      "name": "Compute Business Identity",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        620,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hash",
+        "type": "SHA256",
+        "value": "={{ $json.idempotency_payload }}",
+        "dataPropertyName": "idempotency_key",
+        "encoding": "hex"
+      },
+      "id": "a1f0c4d2-0008-4a10-9c31-6f0b2d7e1008",
+      "name": "Derive Idempotency Key",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        840,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CARRIER_ENDPOINT }}/v1/approaches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $json.idempotency_key }}"
+            },
+            {
+              "name": "X-Approach-Identity",
+              "value": "={{ $json.identity }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ identity: $json.identity, placement_id: $json.placement_id, market_id: $json.market_id, stage: $json.stage, placement_reference: $json.placement_reference, underwriter_email: $json.underwriter_email, arm: 'n8n' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a1f0c4d2-0009-4a10-9c31-6f0b2d7e1009",
+      "name": "Send Approach To Carrier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1060,
+        380
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE market_approach\nSET state           = 'sent',\n    sent_at         = NOW(),\n    attempt_count   = attempt_count + 1,\n    due_at          = NULL,\n    idempotency_key = $2\nWHERE id = $1\nRETURNING id, state, sent_at;",
+        "options": {
+          "queryReplacement": "={{ $('Derive Idempotency Key').item.json.approach_id }},{{ $('Derive Idempotency Key').item.json.idempotency_key }}"
+        }
+      },
+      "id": "a1f0c4d2-0010-4a10-9c31-6f0b2d7e1010",
+      "name": "Mark Approach Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_event (id, occurred_at, verb, identity, actor, detail)\nVALUES (gen_random_uuid(), NOW(), 'sent', $1, 'n8n-scheduler', $2);",
+        "options": {
+          "queryReplacement": "={{ $('Derive Idempotency Key').item.json.identity }},sent to {{ $('Derive Idempotency Key').item.json.underwriter_email }}"
+        }
+      },
+      "id": "a1f0c4d2-0011-4a10-9c31-6f0b2d7e1011",
+      "name": "Log Approach Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1500,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE market_approach\nSET follow_up_at = NOW() + INTERVAL '5 days'\nWHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Derive Idempotency Key').item.json.approach_id }}"
+        }
+      },
+      "id": "a1f0c4d2-0012-4a10-9c31-6f0b2d7e1012",
+      "name": "Schedule Follow-Up",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1720,
+        280
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c4",
+              "leftValue": "={{ $('Derive Idempotency Key').item.json.inception_imminent }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": false,
+        "options": {}
+      },
+      "id": "a1f0c4d2-0013-4a10-9c31-6f0b2d7e1013",
+      "name": "Inception Within 14 Days?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1940,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 2,
+        "unit": "hours"
+      },
+      "id": "a1f0c4d2-0014-4a10-9c31-6f0b2d7e1014",
+      "name": "Wait Before Chase",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2160,
+        180
+      ],
+      "webhookId": "a1f0c4d2-0014-4a10-9c31-6f0b2d7e1014"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CARRIER_ENDPOINT }}/v1/approaches",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Idempotency-Key",
+              "value": "={{ $('Derive Idempotency Key').item.json.idempotency_key }}"
+            },
+            {
+              "name": "X-Approach-Identity",
+              "value": "={{ $('Derive Idempotency Key').item.json.identity }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ identity: $('Derive Idempotency Key').item.json.identity, placement_id: $('Derive Idempotency Key').item.json.placement_id, market_id: $('Derive Idempotency Key').item.json.market_id, stage: $('Derive Idempotency Key').item.json.stage, kind: 'chase', arm: 'n8n' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a1f0c4d2-0015-4a10-9c31-6f0b2d7e1015",
+      "name": "Send Chase To Carrier",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2380,
+        180
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE market_approach\nSET state         = 'retrying',\n    attempt_count = attempt_count + 1,\n    due_at        = NOW() + INTERVAL '15 minutes'\nWHERE id = $1;",
+        "options": {
+          "queryReplacement": "={{ $('Derive Idempotency Key').item.json.approach_id }}"
+        }
+      },
+      "id": "a1f0c4d2-0016-4a10-9c31-6f0b2d7e1016",
+      "name": "Record Send Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1280,
+        580
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO audit_event (id, occurred_at, verb, identity, actor, detail)\nVALUES (gen_random_uuid(), NOW(), 'send_failed', $1, 'n8n-scheduler', $2);",
+        "options": {
+          "queryReplacement": "={{ $('Derive Idempotency Key').item.json.identity }},{{ $json.error ? $json.error.message : 'carrier send failed' }}"
+        }
+      },
+      "id": "a1f0c4d2-0017-4a10-9c31-6f0b2d7e1017",
+      "name": "Log Send Failure",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1500,
+        580
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "REPLACE_WITH_YOUR_POSTGRES_CREDENTIAL_ID",
+          "name": "Market Approach Desk Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Due Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Due Approaches": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Approaches": {
+      "main": [
+        [
+          {
+            "node": "Pass Complete",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Eligible To Approach?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eligible To Approach?": {
+      "main": [
+        [
+          {
+            "node": "Compute Business Identity",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Ineligible Approach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Ineligible Approach": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compute Business Identity": {
+      "main": [
+        [
+          {
+            "node": "Derive Idempotency Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Derive Idempotency Key": {
+      "main": [
+        [
+          {
+            "node": "Send Approach To Carrier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Approach To Carrier": {
+      "main": [
+        [
+          {
+            "node": "Mark Approach Sent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Record Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Approach Sent": {
+      "main": [
+        [
+          {
+            "node": "Log Approach Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Approach Sent": {
+      "main": [
+        [
+          {
+            "node": "Schedule Follow-Up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Follow-Up": {
+      "main": [
+        [
+          {
+            "node": "Inception Within 14 Days?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inception Within 14 Days?": {
+      "main": [
+        [
+          {
+            "node": "Wait Before Chase",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Chase": {
+      "main": [
+        [
+          {
+            "node": "Send Chase To Carrier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Chase To Carrier": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Log Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Approaches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "timezone": "Europe/London",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "versionId": "00000000-0000-4000-8000-000000000001"
+}

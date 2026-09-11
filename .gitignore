@@ -1,0 +1,76 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+
+# --- Node / frontend ---
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# --- Local data and infrastructure state ---
+pgdata/
+redisdata/
+*.sqlite3
+*.db
+docker-compose.override.yml
+
+# --- Measurement and evaluation outputs (regenerated, never hand-edited) ---
+# Committed inputs live in evals/golden/ and tests/cassettes/ and are NOT ignored.
+scripts/measure/out/
+evals/results/
+.langfuse/
+
+# --- Editor / IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Transient ---
+*.tmp
+*.log
+logs/
+
+# Generated demo artifacts. Three are committed exceptions: each is small, regenerates
+# byte-identically, and is useful to a reader who will not clone and run anything.
+#
+# The two label-packet files are committed for a further reason. They are the exact artefact the
+# owner's hold-out labels will be formed against, and a label is a judgement about a specific set
+# of facts — so the facts have to be recoverable later, from the repository, at the digest the
+# labels declare. An uncommitted packet would make the import's fingerprint check unfalsifiable.
+artifacts/*
+!artifacts/m2-demo.html
+!artifacts/human-label-packet.xlsx
+!artifacts/human-label-packet.jsonl
+
+# The chaos suite's per-cell observations (M4.5). Working state: the run writes them, the renderer
+# reads them, and the reviewed artefact is the table they produce in README.md. Committing them
+# would make the same numbers exist in two places, and the copy nobody regenerates is the one a
+# reader would trust.
+.chaos-observations/

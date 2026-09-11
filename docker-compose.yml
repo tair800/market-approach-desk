@@ -1,0 +1,25 @@
+# The local stack. One service: this project needs a database and nothing else, and a compose file
+# that started Redis "for later" would be infrastructure nobody reads.
+#
+# Port 15433 rather than the conventional 5432, and deliberately not 15432: that one belongs to
+# another project on this machine, and a portfolio that quietly fights itself over a port is a
+# portfolio that fails on the reviewer's laptop.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mad
+      POSTGRES_PASSWORD: mad_local_dev
+      POSTGRES_DB: mad
+    ports:
+      - "127.0.0.1:15433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mad -d mad"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - mad-pgdata:/var/lib/postgresql/data
+
+volumes:
+  mad-pgdata:

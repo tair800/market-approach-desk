@@ -1,0 +1,265 @@
+"""**The kill test.** Declared in ADR-001 before any implementation; run here against both arms.
+
+One placement, one carrier, one stage. Two scheduler executions forced to overlap at exactly the
+point where the failure lives, and both arms measured with the same instrument: the fake carrier
+receiver, which counts what *arrives* rather than what either arm believes it sent.
+
+**The overlap is forced, never waited for.** Two threads and a sleep would make this test a
+coin-toss that happens to be passing on the machine it was written on. The barrier makes it a
+statement about the code.
+
+Expected, and stated before it was known:
+
+===========  ====================================================
+Arm          approaches observed at the receiver for one identity
+===========  ====================================================
+n8n          more than one
+Python       exactly one
+===========  ====================================================
+"""
+
+from __future__ import annotations
+
+import asyncio
+import datetime as dt
+import json
+import os
+import pathlib
+from collections.abc import AsyncIterator, Sequence
+
+import pytest
+import pytest_asyncio
+from n8n.simulator import run_workflow_pair
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from market_approach_desk.approach.scheduler import run_tick
+from market_approach_desk.config import Settings
+from market_approach_desk.db.engine import async_dsn
+from market_approach_desk.demo.seed import RACE_MARKET, SEED_EPOCH, reset, seed
+from market_approach_desk.domain.identity import ApproachIdentity, Stage
+from market_approach_desk.domain.receiver import CarrierReceiver
+
+pytestmark = pytest.mark.integration
+
+#: Where the comparison result is written for the console to render. A JSON file rather than a
+#: screenshot, so the console shows the run that actually happened rather than a picture of one.
+RESULT_PATH = pathlib.Path(__file__).resolve().parents[1] / "docs" / "killtest.json"
+
+
+def _settings() -> Settings:
+    return Settings()
+
+
+@pytest_asyncio.fixture
+async def engine() -> AsyncIterator[AsyncEngine]:
+    created = create_async_engine(async_dsn(_settings()), poolclass=NullPool)
+    try:
+        yield created
+    finally:
+        await created.dispose()
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def clean(engine: AsyncEngine) -> AsyncIterator[None]:
+    await reset(engine)
+    await seed(engine)
+    yield
+
+
+def _race_identity() -> ApproachIdentity:
+    """The one cell of the matrix both arms race on, computed the same way the seeder did."""
+    from market_approach_desk.demo.seed import _id
+
+    return ApproachIdentity(
+        placement_id=_id("placement", "PL-2026-0417"),
+        market_id=_id("market", RACE_MARKET),
+        stage=Stage.INITIAL,
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_python_arm_approaches_each_carrier_once_under_overlapping_ticks(
+    engine: AsyncEngine,
+) -> None:
+    """Two ticks, forced to overlap at the claim boundary. The carrier must see one approach.
+
+    The barrier releases the second tick only once the first has *committed its claim and not yet
+    sent* — the exact window the n8n arm loses in. If the Python arm duplicates here, the claim of
+    ADR-001 is false and the arm is wrong; the test is not to be adjusted.
+    """
+    receiver = CarrierReceiver()
+    identity = str(_race_identity())
+    first_claimed = asyncio.Event()
+    second_finished = asyncio.Event()
+
+    async def hold_after_claim(_outcomes: Sequence[object]) -> None:
+        """Let the second tick run to completion while the first is between claim and send."""
+        first_claimed.set()
+        await asyncio.wait_for(second_finished.wait(), timeout=30)
+
+    async def second() -> None:
+        await asyncio.wait_for(first_claimed.wait(), timeout=30)
+        try:
+            await run_tick(engine, receiver=receiver, now=SEED_EPOCH, actor="scheduler-b")
+        finally:
+            second_finished.set()
+
+    await asyncio.gather(
+        run_tick(
+            engine,
+            receiver=receiver,
+            now=SEED_EPOCH,
+            actor="scheduler-a",
+            on_claimed=hold_after_claim,
+        ),
+        second(),
+    )
+
+    observed = receiver.count_for(identity)
+    assert observed == 1, (
+        f"the carrier saw {observed} approaches for {identity}: the market was approached twice "
+        "and that is the irreversible commercial loss this project exists to prevent"
+    )
+    assert receiver.duplicates() == {}, f"duplicates across the panel: {receiver.duplicates()}"
+
+
+@pytest.mark.asyncio
+async def test_the_n8n_arm_duplicates_under_the_same_overlap(engine: AsyncEngine) -> None:
+    """The baseline, under the same harness. **If this passes, the comparison collapses.**
+
+    ADR-001 says so in as many words: an n8n arm that cannot be made to duplicate would make this
+    repository an ordinary CRUD workflow, and the honest response would be to replace the project
+    rather than to soften the test.
+    """
+    receiver = CarrierReceiver()
+    identity = str(_race_identity())
+
+    await run_workflow_pair(engine, receiver=receiver, now=SEED_EPOCH, identity=identity)
+
+    observed = receiver.count_for(identity)
+    assert observed > 1, (
+        f"the n8n arm approached {identity} only {observed} time(s) under a forced overlap. "
+        "The graduation story rests on this failing; if it genuinely cannot fail, ADR-001 says to "
+        "replace the project rather than weaken the test"
+    )
+
+
+@pytest.mark.asyncio
+async def test_both_arms_together_and_the_result_is_written_for_the_console(
+    engine: AsyncEngine,
+) -> None:
+    """Run both under one harness and publish the numbers the README and the console quote.
+
+    Written by the test that measured it, so the figure a reader sees is the figure a run produced.
+    A hand-typed comparison table is a claim; this is a measurement.
+    """
+    identity = str(_race_identity())
+
+    n8n_receiver = CarrierReceiver()
+    await run_workflow_pair(engine, receiver=n8n_receiver, now=SEED_EPOCH, identity=identity)
+
+    await reset(engine)
+    await seed(engine)
+
+    python_receiver = CarrierReceiver()
+    first_claimed = asyncio.Event()
+    second_finished = asyncio.Event()
+
+    async def hold_after_claim(_outcomes: Sequence[object]) -> None:
+        first_claimed.set()
+        await asyncio.wait_for(second_finished.wait(), timeout=30)
+
+    async def second() -> None:
+        await asyncio.wait_for(first_claimed.wait(), timeout=30)
+        try:
+            await run_tick(engine, receiver=python_receiver, now=SEED_EPOCH, actor="scheduler-b")
+        finally:
+            second_finished.set()
+
+    await asyncio.gather(
+        run_tick(
+            engine,
+            receiver=python_receiver,
+            now=SEED_EPOCH,
+            actor="scheduler-a",
+            on_claimed=hold_after_claim,
+        ),
+        second(),
+    )
+
+    result: dict[str, object] = {
+        "identity": identity,
+        "n8n": {
+            "observed": n8n_receiver.count_for(identity),
+            "distinct_keys": n8n_receiver.distinct_keys_for(identity),
+        },
+        "python": {
+            "observed": python_receiver.count_for(identity),
+            "distinct_keys": python_receiver.distinct_keys_for(identity),
+        },
+        "ran_at": dt.datetime.now(dt.UTC).isoformat(),
+    }
+    RESULT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RESULT_PATH.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+    assert n8n_receiver.count_for(identity) > 1
+    assert python_receiver.count_for(identity) == 1
+
+    # Also copy it where the console reads it, when the console exists. Skipped silently rather
+    # than failing: the backend test must not depend on a frontend directory being present.
+    console = RESULT_PATH.parents[1] / "frontend" / "public" / "killtest.json"
+    if console.parent.exists():
+        console.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n")
+
+
+def test_the_shipped_package_does_not_import_the_baseline() -> None:
+    """`src/` must never know `n8n/` exists.
+
+    The dependency runs one way: the baseline reads the shipped domain types so both arms are
+    measured identically, and the shipped service may not know the baseline is there. A guard in
+    the default suite rather than behind the integration mark, because an `import n8n` inside
+    `src/` would otherwise sit there with lint and types green.
+    """
+    import ast
+
+    package = pathlib.Path(__file__).resolve().parents[1] / "src" / "market_approach_desk"
+    inspected = 0
+    for path in package.rglob("*.py"):
+        inspected += 1
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            modules: list[str] = []
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [node.module or ""]
+            for module in modules:
+                assert module.split(".")[0] != "n8n", (
+                    f"{path.name} imports {module}: the shipped service must not know the n8n "
+                    "baseline exists, or the comparison is no longer between two implementations"
+                )
+    assert inspected >= 8, "the scan is not seeing the package"
+
+
+def test_the_fixtures_name_no_real_party() -> None:
+    """Every carrier, underwriter and address in the fixtures is invented.
+
+    Checked rather than asserted in a docstring: a public repository that shipped a real
+    underwriter's address would be a disclosure, and the person who added the fixture would not be
+    the person who noticed.
+    """
+    from market_approach_desk.demo import seed as seeder
+
+    source = pathlib.Path(seeder.__file__).read_text(encoding="utf-8")
+    assert "@example.invalid" in source, "fixture addresses must use the reserved invalid TLD"
+    for real in ("@gmail", "@outlook", "@lloyds", '.com"', ".co.uk"):
+        assert real not in source, f"fixtures contain something that looks real: {real!r}"
+
+
+def test_the_environment_is_a_disposable_database() -> None:
+    """The race test truncates tables. Refuse to do that to anything but a throwaway database."""
+    dsn = os.environ.get("MAD_POSTGRES_DSN", "")
+    assert "localhost" in dsn or "127.0.0.1" in dsn or dsn == "", (
+        "the integration suite resets every table; it may only run against a local database"
+    )
