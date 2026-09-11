@@ -1,0 +1,69 @@
+# A local n8n, so a reader can import `market-approach.workflow.json` and see the baseline rather
+# than take this repository's word for it.
+#
+# Separate from the project's root compose file on purpose. The root file runs the PostgreSQL both
+# arms share and is needed to run anything here; this one runs the *baseline's* tooling and is
+# needed by nobody who only wants the tests to pass. Merging them would make an optional container
+# a prerequisite for `make gate`.
+#
+#   cd n8n && docker compose up -d      # then http://127.0.0.1:5678
+#
+# Start the project's database first (`docker compose up -d` in the repository root); the workflow's
+# Postgres credential points at it through `host.docker.internal`.
+services:
+  n8n:
+    # Unpinned deliberately, and this is the one place in the repository where that is the honest
+    # choice: the compatibility surface for an import is the `typeVersion` on each node, not the
+    # image tag, and pinning a tag that cannot be tested on every reader's machine would be false
+    # precision. If an import ever fails, n8n names the node and version it cannot load.
+    image: n8nio/n8n:latest
+    # Bound to the loopback interface. **This is the access control that actually holds** — the
+    # variables below are a convenience, and an n8n reachable from the network would be a remote
+    # code execution service with a login page in front of it.
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      # Placeholders, and nothing else may ever be committed here. Override them in a local
+      # `n8n/.env` (git-ignored) before starting, or change them in the UI on first run.
+      #
+      # n8n 1.x replaced these with an owner account created the first time you open the editor; on
+      # such a version these are ignored and the account prompt is what you will see. Either way the
+      # port binding above is what keeps the instance private.
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-replace-me-local-only}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-replace-me-local-only}
+
+      # Where `Send Approach To Carrier` posts. **You must supply this.** The fake carrier receiver
+      # in `src/market_approach_desk/domain/receiver.py` is an in-process Python object, not an HTTP
+      # service — which is exactly why both arms are measured through it directly rather than over a
+      # socket. Point this at your own endpoint if you want to watch the workflow run for real.
+      CARRIER_ENDPOINT: ${CARRIER_ENDPOINT:-http://host.docker.internal:8000/carrier}
+
+      GENERIC_TIMEZONE: Europe/London
+      TZ: Europe/London
+      # A demonstration container should not phone home, and a version banner is noise in a
+      # screenshot that is meant to show a workflow.
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      # The editor is served over plain HTTP on loopback, so a Secure-only cookie would lock you out
+      # of your own container.
+      N8N_SECURE_COOKIE: "false"
+      N8N_RUNNERS_ENABLED: "true"
+    # Lets the workflow's Postgres credential reach the database from the root compose file, which
+    # publishes it on 127.0.0.1:15433 of the host rather than on a shared Docker network.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Holds the encryption key n8n generates on first start along with your workflows and
+      # credentials. Delete the volume and the saved credential becomes undecryptable — which is the
+      # correct behaviour, and the reason no key is set here.
+      - n8n-data:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  n8n-data:

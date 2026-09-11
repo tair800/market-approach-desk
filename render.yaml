@@ -1,0 +1,27 @@
+# Render blueprint for the free public demonstration.
+#
+# Render's own free PostgreSQL is deliberately not used: it expires after 30 days, which would take
+# the demonstration down on a schedule. Neon's free tier does not expire.
+services:
+  - type: web
+    name: market-approach-desk-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      # Render's free plan has no release hook, so migrations run in the entrypoint.
+      - key: PORT
+        value: 10000
+      - key: MAD_ENVIRONMENT
+        value: staging
+      - key: MAD_DEMO_MODE
+        value: "false"
+      # Fail-closed. The console reaches this API server-side and needs no browser origin.
+      - key: MAD_CORS_ALLOW_ORIGINS
+        value: "[]"
+      # `sync: false` means Render prompts for the value and stores it encrypted. The value never
+      # appears in this file, in this repository, or in any log.
+      - key: MAD_POSTGRES_DSN
+        sync: false
