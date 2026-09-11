@@ -60,6 +60,11 @@ Three mechanisms, and each covers what the others cannot:
 3. **A unique constraint on `(placement_id, market_id, stage)`** underneath both, as the thing that
    cannot be argued with.
 
+The claim also clears `due_at`, which means the headline kill test alone cannot tell the row lock
+from the cleared column — it would pass with `SKIP LOCKED` deleted. So a second test forces two
+claim transactions to overlap *before either commits*, where only the lock can decide, and it was
+verified to go red when the lock is removed.
+
 **The send is deliberately outside the claim transaction.** Holding a database transaction open
 across a network call makes the second scheduler wait instead of skip, which looks safer and quietly
 converts two workers into one.

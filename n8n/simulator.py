@@ -106,6 +106,7 @@ __all__ = [
     "NodeEvent",
     "NodeOutcome",
     "OverlapResult",
+    "RaceNotRunError",
     "n8n_idempotency_payload",
     "parse_identity",
     "run_overlapping_executions",
@@ -728,7 +729,23 @@ class OverlapResult:
     approaches_observed: int
     distinct_idempotency_keys: int
     duplicates: dict[str, int]
+
+    #: How many executions actually reached the raced identity. Reported so a reader can tell a
+    #: **safe** result from a result that measured nothing at all — see :class:`RaceNotRunError`.
+    executions_that_reached_the_identity: int
+
     traces: tuple[tuple[NodeEvent, ...], ...]
+
+
+class RaceNotRunError(RuntimeError):
+    """The overlap ran but never touched the identity under test, so nothing was measured.
+
+    **This exists because the two most different outcomes in this project produce the same number.**
+    A safe arm reports one approach at the receiver; an arm that never found the row reports zero,
+    and zero reads as *even safer*. A harness that returned quietly here would let an empty
+    database, a stale fixture or a clock the wrong side of ``due_at`` publish themselves as a
+    reliability result. So the run fails instead, and says which of the two it was.
+    """
 
 
 async def run_overlapping_executions(
@@ -767,6 +784,19 @@ async def run_overlapping_executions(
     ]
     traces = await asyncio.gather(*(run.run() for run in runs))
 
+    reached = sum(
+        1
+        for trace in traces
+        if any(event.node == NODE_COMPUTE_IDENTITY and event.detail == identity for event in trace)
+    )
+    if reached == 0:
+        raise RaceNotRunError(
+            f"no execution reached {identity}: it was not in the due-set either tick read, so "
+            "this run measured nothing. Seed the fixtures and check that the approach is still "
+            "'eligible' with due_at at or before the tick instant. A zero reported here would "
+            "otherwise look like the safest possible result."
+        )
+
     return OverlapResult(
         identity=identity,
         executions=executions,
@@ -774,6 +804,7 @@ async def run_overlapping_executions(
         approaches_observed=receiver.count_for(identity),
         distinct_idempotency_keys=receiver.distinct_keys_for(identity),
         duplicates=receiver.duplicates(),
+        executions_that_reached_the_identity=reached,
         traces=tuple(traces),
     )
 
@@ -800,11 +831,22 @@ async def run_workflow_pair(
 
 
 def _print_result(result: OverlapResult) -> None:
-    print(f"  key strategy ................ {result.key_strategy.value}")
-    print(f"  overlapping executions ...... {result.executions}")
-    print(f"  approaches at the receiver ... {result.approaches_observed}")
-    print(f"  distinct idempotency keys ... {result.distinct_idempotency_keys}")
-    print(f"  identities seen twice ....... {len(result.duplicates)}")
+    """Print the numbers, labelled so none of them can be read as a different number.
+
+    ``approaches for the raced identity`` is the figure ADR-001 asserts on. The other identity
+    counted below belongs to the second carrier that was also due in the same pass, and it is shown
+    because the failure is not confined to the row under test — every due approach is duplicated.
+    """
+    duplicated = ", ".join(
+        f"market {identity.rsplit('/', 2)[-2][:8]} x{count}"
+        for identity, count in sorted(result.duplicates.items())
+    )
+    print(f"  key strategy ...................... {result.key_strategy.value}")
+    print(f"  overlapping executions ............ {result.executions}")
+    print(f"  of which reached the identity ..... {result.executions_that_reached_the_identity}")
+    print(f"  approaches for the raced identity . {result.approaches_observed}")
+    print(f"  distinct idempotency keys ......... {result.distinct_idempotency_keys}")
+    print(f"  identities approached >1 time ..... {len(result.duplicates)} [{duplicated or '-'}]")
 
 
 async def _demonstrate() -> None:
@@ -835,13 +877,20 @@ async def _demonstrate() -> None:
             await reset(engine)
             await seed(engine)
             receiver = CarrierReceiver()
-            result = await run_overlapping_executions(
-                engine,
-                receiver=receiver,
-                now=SEED_EPOCH,
-                identity=race,
-                key_strategy=strategy,
-            )
+            try:
+                result = await run_overlapping_executions(
+                    engine,
+                    receiver=receiver,
+                    now=SEED_EPOCH,
+                    identity=race,
+                    key_strategy=strategy,
+                )
+            except RaceNotRunError as error:
+                # Reported as a failed measurement rather than a safe result, and as a message
+                # rather than a traceback: the usual cause is something else resetting the same
+                # database mid-run, which is an operator problem and not a defect to debug.
+                print(f"MEASUREMENT FAILED ({strategy.value}): {error}")
+                raise SystemExit(1) from error
             label = (
                 "as shipped in market-approach.workflow.json"
                 if strategy is IdempotencyKeyStrategy.BUSINESS_IDENTITY

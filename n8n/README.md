@@ -105,6 +105,14 @@ hoped would produce a number that depends on machine load, and a number that dep
 is not evidence. If the barrier is never satisfied the run fails loudly rather than reporting a
 reassuring zero — *no duplicate* and *the race never happened* must never look the same.
 
+The same guard covers the fixtures. If neither execution's due-set contained the identity under
+test, the run raises `RaceNotRunError` instead of returning. **The two most different outcomes in
+this project otherwise produce almost the same number**: a safe arm reports one approach at the
+receiver, and an arm that never found the row reports zero — which reads as *even safer*. An empty
+database, a stale fixture or a clock the wrong side of `due_at` would publish itself as a
+reliability result. That failure was not hypothetical; it happened during development, and the guard
+exists because of it.
+
 ### What the simulator models faithfully, and what it does not
 
 **This paragraph matters more than the rest of this file.** The baseline is modelled rather than

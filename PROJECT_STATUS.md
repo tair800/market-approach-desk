@@ -66,6 +66,17 @@ approaches"* — which sends you to the wrong module entirely. Replaced with a s
 `TRUNCATE … RESTART IDENTITY CASCADE`: one statement, one transaction, no window in which half the
 tables are empty.
 
+**The main kill test could not tell `SKIP LOCKED` from the cleared `due_at`.** The claim does both:
+it takes a row lock *and* sets `due_at = NULL`. The kill test releases the second tick after the
+first has committed, so by then the row is not due for either reason — and the test would have
+passed identically with the lock deleted. A mechanism a test cannot distinguish from its absence is
+a mechanism that test is not proving.
+
+`test_skip_locked_is_what_does_the_work_not_the_cleared_due_at` forces the overlap one layer
+earlier: two claim transactions run concurrently and **neither commits**, so the cleared `due_at` is
+invisible to the other session and only the lock can decide. Verified falsifiable by deleting the
+`with_for_update(skip_locked=True)` clause and watching it go red, then restoring it.
+
 **Three of the first guard tests were wrong in the same way.** A substring scan banned `id` and fired
 on `confidence`; another banned the whole `urllib` package and fired on `urllib.parse`, which is
 string manipulation the DSN normaliser legitimately uses. Both now match word parts and named

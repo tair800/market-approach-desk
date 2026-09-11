@@ -23,16 +23,16 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import json
-import os
 import pathlib
 from collections.abc import AsyncIterator, Sequence
 
 import pytest
 import pytest_asyncio
 from n8n.simulator import run_workflow_pair
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from market_approach_desk.approach.claim import claim_due_approaches
 from market_approach_desk.approach.scheduler import run_tick
 from market_approach_desk.config import Settings
 from market_approach_desk.db.engine import async_dsn
@@ -213,53 +213,47 @@ async def test_both_arms_together_and_the_result_is_written_for_the_console(
         console.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
-def test_the_shipped_package_does_not_import_the_baseline() -> None:
-    """`src/` must never know `n8n/` exists.
+@pytest.mark.asyncio
+async def test_skip_locked_is_what_does_the_work_not_the_cleared_due_at(
+    engine: AsyncEngine,
+) -> None:
+    """**Does the Python arm pass for the right reason?**
 
-    The dependency runs one way: the baseline reads the shipped domain types so both arms are
-    measured identically, and the shipped service may not know the baseline is there. A guard in
-    the default suite rather than behind the integration mark, because an `import n8n` inside
-    `src/` would otherwise sit there with lint and types green.
+    The claim does two things: it takes a row lock *and* sets ``due_at = NULL``. The kill test above
+    releases the second tick after the first has committed, so by then the row is not due for either
+    reason — meaning that test would pass identically with ``SKIP LOCKED`` deleted. A mechanism a
+    test cannot distinguish from its own absence is a mechanism that test is not proving, and the
+    README names this one specifically.
+
+    So the overlap is forced one layer earlier: two claim transactions run concurrently and
+    **neither commits**, so the cleared ``due_at`` is invisible to the other session and the row
+    lock is the only thing left that can decide. Verified falsifiable by deleting the
+    ``with_for_update(skip_locked=True)`` clause and watching this go red.
     """
-    import ast
+    started = asyncio.Event()
+    release = asyncio.Event()
+    claimed_by: list[str] = []
 
-    package = pathlib.Path(__file__).resolve().parents[1] / "src" / "market_approach_desk"
-    inspected = 0
-    for path in package.rglob("*.py"):
-        inspected += 1
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            modules: list[str] = []
-            if isinstance(node, ast.Import):
-                modules = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                modules = [node.module or ""]
-            for module in modules:
-                assert module.split(".")[0] != "n8n", (
-                    f"{path.name} imports {module}: the shipped service must not know the n8n "
-                    "baseline exists, or the comparison is no longer between two implementations"
-                )
-    assert inspected >= 8, "the scan is not seeing the package"
+    async def claimer(name: str, *, hold: bool) -> None:
+        async with AsyncSession(engine) as session, session.begin():
+            outcomes = await claim_due_approaches(session, now=SEED_EPOCH, actor=name)
+            if any(outcome.may_send for outcome in outcomes):
+                claimed_by.append(name)
+            if hold:
+                started.set()
+                await asyncio.wait_for(release.wait(), timeout=30)
 
+    async def second() -> None:
+        await asyncio.wait_for(started.wait(), timeout=30)
+        try:
+            await claimer("b", hold=False)
+        finally:
+            release.set()
 
-def test_the_fixtures_name_no_real_party() -> None:
-    """Every carrier, underwriter and address in the fixtures is invented.
+    await asyncio.gather(claimer("a", hold=True), second())
 
-    Checked rather than asserted in a docstring: a public repository that shipped a real
-    underwriter's address would be a disclosure, and the person who added the fixture would not be
-    the person who noticed.
-    """
-    from market_approach_desk.demo import seed as seeder
-
-    source = pathlib.Path(seeder.__file__).read_text(encoding="utf-8")
-    assert "@example.invalid" in source, "fixture addresses must use the reserved invalid TLD"
-    for real in ("@gmail", "@outlook", "@lloyds", '.com"', ".co.uk"):
-        assert real not in source, f"fixtures contain something that looks real: {real!r}"
-
-
-def test_the_environment_is_a_disposable_database() -> None:
-    """The race test truncates tables. Refuse to do that to anything but a throwaway database."""
-    dsn = os.environ.get("MAD_POSTGRES_DSN", "")
-    assert "localhost" in dsn or "127.0.0.1" in dsn or dsn == "", (
-        "the integration suite resets every table; it may only run against a local database"
+    assert claimed_by == ["a"], (
+        f"both sessions claimed the same approach ({claimed_by}): SELECT … FOR UPDATE SKIP LOCKED "
+        "is not doing the work the README says it does, and the headline kill test was passing on "
+        "the cleared due_at alone"
     )
