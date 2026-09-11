@@ -530,8 +530,8 @@ class N8nWorkflowExecution:
         test that would be *inside* a claim, because its read is a plain ``SELECT`` — a claiming
         ``UPDATE … RETURNING`` in that same Postgres node would change that, and is not modelled
         here (see ``README.md``, "Why the failure is the shape") — so an execution that has
-        already sent is invisible here. The Python arm answers the same questions inside the transaction that
-        reserves the row, and that single difference is the whole comparison.
+        already sent is invisible here. The Python arm answers the same questions inside the
+        transaction that reserves the row, and that single difference is the whole comparison.
         """
         eligible = (
             item.state == _SENDABLE_STATE
