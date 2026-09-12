@@ -49,8 +49,14 @@ Read this before drawing conclusions from what is on the screen:
 - **Free tier, so the first request is slow.** The Render instance spins down when idle and a cold
   start delays the first request by roughly 50 seconds; load it once more and it answers normally.
   Neon's free compute also scales to zero and wakes in a second or two.
-- **The audit screen is empty on purpose.** The deployment seeds a board, not a history: no
-  scheduler execution has run against the deployed database, so there is nothing to record yet.
+- **The deployment shows a board in a state, not the mechanism that reaches it.** The seeder inserts
+  rows directly rather than driving them through `claim()` and the scheduler, so two things on the
+  live site follow from the fixture rather than from a run: the **audit screen is empty**, and the
+  board's header reads **0 send attempts** while two rows show **ATT 1** — the header counts
+  `approach_attempt` rows, the column reads the seeded `attempt_count`. The blocked carrier is
+  blocked because the seeder marked it blocked, not because the duplicate guard fired. **The guard
+  is proven where it can be proven**: the kill test runs against real PostgreSQL in CI on every
+  push. See [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for the full note.
 
 ---
 

@@ -37,6 +37,7 @@ absorbed the second approach would hide the failure this project exists to demon
 | Operator console | **DONE** | Board, comparison and audit screens; `npm run build` and 23 Vitest tests pass; the API address is server-side only and does not reach the browser |
 | n8n workflow | **DONE** | Importable JSON plus a faithful execution simulator that makes the race deterministic |
 | Offline suite | **DONE** | 12 tests, no database and no credential |
+| Public deployment | **LIVE** | Console <https://market-approach-desk.vercel.app> on Vercel Hobby, API <https://market-approach-desk-api.onrender.com> on Render Free, PostgreSQL on Neon Free. `/readyz` reaches the database and `/api/v1/meta` reports the deployed revision; see [`docs/deployment.md`](docs/deployment.md) |
 
 ---
 
@@ -48,11 +49,38 @@ absorbed the second approach would hide the failure this project exists to demon
 | **Exactly-once delivery** | **Not claimed** | Email is not exactly-once. The claim is *at most one accepted business approach per identity under the tested contract*, measured at the receiver. |
 | **Five of the six n8n failure modes** | **Analysed, not proven** | The blueprint names six. One — overlapping schedule executions — is demonstrated deterministically. The rest are written up in `n8n/README.md` and labelled as analysed. An analysed failure mode is not evidence. |
 | **Recovery from a dead scheduler** | **Not implemented** | A claim committed with `due_at` cleared is invisible to every later tick; there is no lease and no stale-claim sweep, so a scheduler that dies between claiming and sending strands that approach until a person looks. The direction is the safe one — not sent rather than sent twice — and the row shows as `claimed` on the board. |
-| **Deployment** | **Live** | Console on Vercel at <https://market-approach-desk.vercel.app>, API on Render at <https://market-approach-desk-api.onrender.com>, PostgreSQL on Neon — all free tier. `/readyz` reaches the database and `/api/v1/meta` reports the deployed revision. See [`docs/deployment.md`](docs/deployment.md). |
 
 ---
 
 ## Known issues and findings
+
+**The seeded demonstration goes around the claim and scheduler paths, and the live board shows it.**
+Found by an adversarial review of the deployment, not by a test. `demo/seed.py` inserts placements,
+markets, approaches and replies directly and hand-sets `attempt_count = 1` on two approaches
+(lines 139 and 166) without inserting the matching `ApproachAttempt` rows. `ApproachAttempt` is
+written in exactly one place — `approach/scheduler.py:118` — and `AuditEvent` in exactly one —
+`approach/claim.py:88` — and the seeder calls neither.
+
+Two consequences are visible on the public demonstration right now:
+
+- **The board contradicts itself.** Its header counts `ApproachAttempt` rows (`api.py:277-279`) and
+  reads **0 send attempts**, while two rows in the table below it show **ATT 1**, because that
+  column reads the hand-set `attempt_count` column. Both numbers are honestly derived; they are
+  reading two different things, and nothing on the screen says so.
+- **The audit trail is empty**, and not only because no scheduler tick has run. Even the seeded
+  history was written around the one function that appends to it, so the screen that answers *who
+  approached this carrier, and when* has nothing to answer with.
+
+**What this does and does not undermine.** The guard itself is genuinely proven — the kill test runs
+against real PostgreSQL in CI on every push, and the claim, `SKIP LOCKED` and the audit append are
+exercised there. What is not true is that the *deployed demonstration* exercises them: it shows a
+board in a state, not the mechanism that reaches that state. The blocked carrier is blocked because
+the seeder marked it blocked, not because the duplicate guard fired.
+
+**Recorded rather than fixed:** the project is frozen at this commit, and this is a property of the
+demonstration fixture rather than a deployment fault. Closing it means seeding through
+`claim()`/`record_outcome()` — or writing the attempt and audit rows the seeder currently implies —
+so that the demonstration's own history is produced by the code the project is about.
 
 **The no-HTTP-client guard bans names, and the ban list has holes.** Found by an adversarial review
 during the deployment pass, by executing the real test function against copies of the package with
