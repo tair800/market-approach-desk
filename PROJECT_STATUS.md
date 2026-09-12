@@ -48,7 +48,7 @@ absorbed the second approach would hide the failure this project exists to demon
 | **Exactly-once delivery** | **Not claimed** | Email is not exactly-once. The claim is *at most one accepted business approach per identity under the tested contract*, measured at the receiver. |
 | **Five of the six n8n failure modes** | **Analysed, not proven** | The blueprint names six. One — overlapping schedule executions — is demonstrated deterministically. The rest are written up in `n8n/README.md` and labelled as analysed. An analysed failure mode is not evidence. |
 | **Recovery from a dead scheduler** | **Not implemented** | A claim committed with `due_at` cleared is invisible to every later tick; there is no lease and no stale-claim sweep, so a scheduler that dies between claiming and sending strands that approach until a person looks. The direction is the safe one — not sent rather than sent twice — and the row shows as `claimed` on the board. |
-| **Deployment** | **Not yet deployed** | The stack runs locally via Docker Compose; the container image is built and verified. Creating the Render service and Neon database is owner account action. |
+| **Deployment** | **Live** | Console on Vercel at <https://market-approach-desk.vercel.app>, API on Render at <https://market-approach-desk-api.onrender.com>, PostgreSQL on Neon — all free tier. `/readyz` reaches the database and `/api/v1/meta` reports the deployed revision. See [`docs/deployment.md`](docs/deployment.md). |
 
 ---
 

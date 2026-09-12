@@ -107,18 +107,59 @@ n8n instance. That is stated on the screen itself, with the timestamp of the run
 
 ## Status
 
-**Not yet deployed.** Creating the Neon database, the Render service and the Vercel project is owner
-account action, and nothing in this repository can perform it.
+**Deployed and live.**
 
-What is verified, locally and end to end against the real image:
+| Layer | URL | Service | Plan | Region |
+|---|---|---|---|---|
+| Console | <https://market-approach-desk.vercel.app> | Vercel | Hobby | `fra1` |
+| API | <https://market-approach-desk-api.onrender.com> | Render Web Service (Docker) | Free | Frankfurt |
+| PostgreSQL | not public | Neon project `market-approach-desk`, database `mad`, PostgreSQL 16 | Free | `aws-eu-central-1` |
 
-| Step | Evidence |
+The Render service is Blueprint-managed from `render.yaml` on `main`, so every value except
+`MAD_POSTGRES_DSN` comes from the committed file. The Vercel project builds from the `frontend`
+root directory with `APPROACH_API_BASE_URL` pointing at the Render URL and nothing else set.
+
+The Neon connection string is the **direct** endpoint, not the `-pooler` one, pasted verbatim
+including `?sslmode=require&channel_binding=require`; `db/engine.py` normalises it. It exists only
+in Render's encrypted environment — not in this repository, not in any log, and not in any build
+output.
+
+### What the first boot did, observed in the Render log
+
+```
+applying migrations...
+INFO [alembic.runtime.migration] Running upgrade  -> 8c024e94d080, approach schema
+bootstrapping the demonstration...
+seeded the demonstration
+starting api on port 10000
+INFO: Application startup complete.
+==> Your service is live
+```
+
+### Verified against the public URLs
+
+| Check | Result |
 |---|---|
-| Image builds | `docker build -t mad-api:deploy .` succeeds from a clean context |
-| Migrations apply on boot | `Running upgrade  -> 8c024e94d080, approach schema` in the container log |
-| Demonstration seeds once | boot 1 `seeded the demonstration`; boot 2 `already populated; nothing written` |
-| The four routes the console reads | `/api/v1/placements`, `/api/v1/audit`, `/api/v1/stats`, `/api/v1/meta` all answer 200 against the bootstrapped database |
-| Liveness and readiness | `/healthz` and `/readyz` answer 200; `/readyz` reaches PostgreSQL |
+| `GET /healthz` | `200` `{"status":"alive","service":"market-approach-desk","version":"0.1.0"}` |
+| `GET /readyz` | `200` `{"status":"ready","postgres":"healthy"}` — the deployed process reaches Neon |
+| `GET /api/v1/meta` | `200` `demo_mode: true`, `revision: 9ca8d6d…` from `RENDER_GIT_COMMIT` |
+| `GET /api/v1/stats` | `200` `{"by_state":{"eligible":2,"sent":1,"replied":1,"blocked":1},"attempts":0}` |
+| `GET /api/v1/audit` | `200` `[]` — no scheduler execution has run, so the trail is empty |
+| `GET /api/v1/placements` | `200` — `PL-2026-0417`, Harbour Logistics Group, five carriers |
+| Console `/`, `/comparison`, `/audit` | `200`, and each renders from the API through the same-origin proxy |
+| No credential in the browser | the served HTML and all nine JS chunks contain no DSN, no Neon host and no `onrender.com` address; the only match for `APPROACH_API_BASE_URL` is the variable *name* inside an error-hint string |
 
-`/api/v1/meta` reports `revision` from `RENDER_GIT_COMMIT`, which Render sets and a local `docker
-run` does not — so it is empty locally and populated once deployed.
+`/readyz` is the check that matters here, not `/healthz`. `/healthz` deliberately touches nothing
+external, so it would answer `200` even against an unreachable database — and `MAD_POSTGRES_DSN`
+has a localhost default, which means a misspelled variable name would produce a service that looks
+healthy and serves nothing. `/readyz` reaching PostgreSQL is what proves the deployed process is
+talking to Neon.
+
+### Free-tier limitations, stated plainly
+
+- **Cold start.** The Render free instance spins down when idle; the first request after that
+  delays by roughly 50 seconds. Neon's free compute also scales to zero and wakes in a second or
+  two (`Database spun up in 1.58 sec` on first use).
+- **One instance.** The free plan runs exactly one, which is the only reason migrate-on-boot is
+  safe here. See above.
+- **No release hook.** A paid feature, which is why migrations run in the entrypoint.

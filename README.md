@@ -11,6 +11,44 @@ point.
 
 ---
 
+## Live demo
+
+**LIVE DEMO: https://market-approach-desk.vercel.app**
+
+**Backend: https://market-approach-desk-api.onrender.com**
+
+| Layer | Service | Plan | Region |
+|---|---|---|---|
+| Console | Vercel | Hobby | `fra1` |
+| API | Render Web Service (Docker) | Free | Frankfurt |
+| PostgreSQL | Neon | Free | `eu-central-1` |
+
+Read this before drawing conclusions from what is on the screen:
+
+- **The data is synthetic.** Every placement, carrier, underwriter and reply in the demonstration is
+  invented. No real insured, no real carrier and no real broker record appears in this repository or
+  in the deployed database.
+- **The Python arm is the live service.** What is deployed is the typed Python implementation; it is
+  the arm the console reads.
+- **n8n is not hosted, and does not need to be.** The workflow is committed at
+  [`n8n/market-approach.workflow.json`](n8n/market-approach.workflow.json) and imports into any n8n
+  instance; [`n8n/docker-compose.yml`](n8n/docker-compose.yml) runs one locally. Paying to host n8n
+  permanently for a portfolio demonstration would buy nothing the committed workflow does not
+  already show.
+- **The comparison screen renders a measured result, not a typed one.** n8n: **2 observed
+  approaches**. Python: **1 observed approach**. Both come from the run that wrote
+  [`docs/killtest.json`](docs/killtest.json), and CI re-runs that kill test on every push.
+- **No live AI evaluation has been performed.** The shipped package contains no HTTP client and
+  cannot reach a model provider — a guard test enforces it. What ships is a deterministic stand-in
+  classifier whose `model_id` is `stand-in`.
+- **Free tier, so the first request is slow.** The Render instance spins down when idle and a cold
+  start delays the first request by roughly 50 seconds; load it once more and it answers normally.
+  Neon's free compute also scales to zero and wakes in a second or two.
+- **The audit screen is empty on purpose.** The deployment seeds a board, not a history: no
+  scheduler execution has run against the deployed database, so there is nothing to record yet.
+
+---
+
 ## The measured result
 
 One placement, one carrier, one stage. Two scheduler executions forced to overlap at the moment the
@@ -122,6 +160,9 @@ cd n8n && docker compose up -d    # n8n on :5678, then import market-approach.wo
 ---
 
 ## What you are looking at
+
+All three screenshots below were captured from the **live deployment** at
+<https://market-approach-desk.vercel.app>, not from a local run.
 
 **The board** — every placement and the carrier panel behind it. One row is one approach: one
 carrier at one stage, which is the identity the database holds unique.
