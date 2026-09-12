@@ -38,9 +38,14 @@ Read this before drawing conclusions from what is on the screen:
 - **The comparison screen renders a measured result, not a typed one.** n8n: **2 observed
   approaches**. Python: **1 observed approach**. Both come from the run that wrote
   [`docs/killtest.json`](docs/killtest.json), and CI re-runs that kill test on every push.
-- **No live AI evaluation has been performed.** The shipped package contains no HTTP client and
-  cannot reach a model provider — a guard test enforces it. What ships is a deterministic stand-in
-  classifier whose `model_id` is `stand-in`.
+- **No live AI evaluation has been performed.** No model has been called for this project: the
+  package imports no HTTP client and no provider SDK, the deployment carries no provider
+  credential, and no evaluation artefact is committed. The only classifier implementation in the
+  package is a deterministic stand-in whose `model_id` is `stand-in`, and nothing on the demo or
+  deployed path calls even that — seeded replies carry no classification. A guard test walks the
+  package's imports and fails the build on the names it bans, which is a check on spelling rather
+  than a proof of unreachability; see [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for what it does and
+  does not catch.
 - **Free tier, so the first request is slow.** The Render instance spins down when idle and a cold
   start delays the first request by roughly 50 seconds; load it once more and it answers normally.
   Neon's free compute also scales to zero and wakes in a second or two.

@@ -44,7 +44,7 @@ absorbed the second approach would hide the failure this project exists to demon
 
 | Claim | State | Why |
 |---|---|---|
-| **Live model quality, cost, latency** | **NOT MEASURED** | The shipped package contains no HTTP client and cannot dial a provider; a guard test enforces it. The classifier that runs is a declared stand-in whose rationale says no model produced it. |
+| **Live model quality, cost, latency** | **NOT MEASURED** | No model has been called: nothing under `src/` imports an HTTP client or a provider SDK, the deployment carries no provider credential, and no evaluation artefact is committed. The only classifier implementation is a declared stand-in whose rationale says no model produced it, and nothing on the demo or deployed path calls even that. A guard test checks the package's imports against a ban list — see *Known issues* for what that list does and does not catch. |
 | **Exactly-once delivery** | **Not claimed** | Email is not exactly-once. The claim is *at most one accepted business approach per identity under the tested contract*, measured at the receiver. |
 | **Five of the six n8n failure modes** | **Analysed, not proven** | The blueprint names six. One — overlapping schedule executions — is demonstrated deterministically. The rest are written up in `n8n/README.md` and labelled as analysed. An analysed failure mode is not evidence. |
 | **Recovery from a dead scheduler** | **Not implemented** | A claim committed with `due_at` cleared is invisible to every later tick; there is no lease and no stale-claim sweep, so a scheduler that dies between claiming and sending strands that approach until a person looks. The direction is the safe one — not sent rather than sent twice — and the row shows as `claimed` on the board. |
@@ -53,6 +53,35 @@ absorbed the second approach would hide the failure this project exists to demon
 ---
 
 ## Known issues and findings
+
+**The no-HTTP-client guard bans names, and the ban list has holes.** Found by an adversarial review
+during the deployment pass, by executing the real test function against copies of the package with
+one extra import added. Three things are true at once and only the first was being stated:
+
+1. **The fact holds.** Nothing under `src/` imports an HTTP client or a provider SDK — the only
+   match for a network-shaped name is `urllib.parse` in `db/engine.py`, which is string
+   manipulation. Runtime dependencies are FastAPI, uvicorn, pydantic, SQLAlchemy, Alembic and
+   asyncpg; `httpx` is in the dev group only. No provider credential exists in the deployment and
+   no evaluation artefact is committed.
+2. **The guard is narrower than the claim it was cited for.** `_DIALS` bans `urllib.request`,
+   `urllib.error`, `http.client`, `httpx`, `requests`, `aiohttp` and `socket`. It does **not** ban
+   `openai`, `anthropic` or `urllib3`, so adding any of those three leaves the build green.
+3. **`ast.ImportFrom` is handled structurally wrongly.** It collects `[node.module or ""]` and never
+   looks at `node.names`, so `from urllib import request` and `from http import client` reach
+   exactly the modules `_DIALS` names and pass anyway. `importlib.import_module("httpx")` is
+   likewise invisible, which is the ordinary limit of an AST guard.
+
+So the honest statement is *the package imports no HTTP client, and a guard test checks the spelling
+of a ban list* — not *a guard test makes it impossible*. **Recorded rather than fixed:** the project
+is frozen at this commit and this is not a deployment fault. Closing it means adding the three
+missing names, reading `node.names` on `ImportFrom`, and pinning both with a test that adds each
+banned import to a scratch copy and asserts the guard goes red.
+
+**Nothing on the demo or deployed path classifies anything.** `StandInClassifier` is defined in
+`replies/classify.py` and constructed in exactly two places, both in `tests/test_boundaries.py`.
+No module under `src/` or `n8n/` builds or calls it, and the seeder writes its carrier reply with
+`classification = None`. Earlier wording here said *the classifier that runs is a declared
+stand-in*, which implies one runs; none does.
 
 **A docstring described endpoints that do not exist.** `api.py` opened by describing three
 demonstration-control endpoints answering 404 outside demo mode. No such endpoints were ever

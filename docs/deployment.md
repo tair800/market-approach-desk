@@ -147,7 +147,7 @@ INFO: Application startup complete.
 | `GET /api/v1/audit` | `200` `[]` — no scheduler execution has run, so the trail is empty |
 | `GET /api/v1/placements` | `200` — `PL-2026-0417`, Harbour Logistics Group, five carriers |
 | Console `/`, `/comparison`, `/audit` | `200`, and each renders from the API through the same-origin proxy |
-| No credential in the browser | the served HTML and all nine JS chunks contain no DSN, no Neon host and no `onrender.com` address; the only match for `APPROACH_API_BASE_URL` is the variable *name* inside an error-hint string |
+| No credential in the browser | the served HTML of all three pages and every one of the eleven JS chunks they reference contain no DSN, no Neon host, no `onrender.com` address and no `sslmode`/`channel_binding`. `APPROACH_API_BASE_URL` appears three times — once per route bundle, because the error-hint map is inlined into each — and every occurrence is the variable *name* inside the string `"Set APPROACH_API_BASE_URL in the console environment and reload."`, never its value |
 
 `/readyz` is the check that matters here, not `/healthz`. `/healthz` deliberately touches nothing
 external, so it would answer `200` even against an unreachable database — and `MAD_POSTGRES_DSN`
