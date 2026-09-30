@@ -4,6 +4,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Board } from "@/components/Board";
 import { LoadingPanel } from "@/components/panels";
 import { resetWake } from "@/lib/wake";
+import type { PlacementView } from "@/lib/types";
+import { approach } from "./fixtures";
+
+function placement(): PlacementView {
+  return {
+    id: "placement-1",
+    reference: "PL-TEST-0001",
+    insured_name: "Test Insured",
+    class_of_business: "Marine cargo",
+    handler: "test.handler",
+    inception_on: "2026-10-01",
+    approaches: [approach()],
+  };
+}
 
 /**
  * A free-tier API that is waking must read as "starting", not as a failure — and the wait must
@@ -21,7 +35,7 @@ function reply(status: number, body: unknown): Response {
 }
 
 const WAKING = {
-  error: { kind: "timeout", message: "The API did not answer within 8 seconds.", retryable: true },
+  error: { kind: "upstream", message: "The API answered 429.", retryable: true },
 };
 
 /** Route the console's own endpoints to scripted answers, counting calls per path. */
@@ -54,40 +68,56 @@ afterEach(() => {
 });
 
 describe("a sleeping demo API", () => {
-  it("shows a starting state, waits it out, then shows the real board with no error", async () => {
+  it("asks the health check first, shows a starting state, then shows the real board", async () => {
     const calls = scriptedConsole({
-      "/api/console/placements": (n) => (n === 1 ? reply(504, WAKING) : reply(200, [])),
-      "/api/console/stats": (n) =>
-        n === 1 ? reply(504, WAKING) : reply(200, { by_state: {}, attempts: 0 }),
-      "/api/console/health": (n) => (n < 3 ? reply(504, WAKING) : reply(200, { status: "ok" })),
+      "/api/console/health": (n) => (n < 3 ? reply(502, WAKING) : reply(200, { status: "alive" })),
+      "/api/console/placements": () => reply(200, []),
+      "/api/console/stats": () => reply(200, { by_state: {}, attempts: 0 }),
     });
 
     render(<Board />);
     await advance(0);
 
-    expect(screen.getByTestId("waking-panel")).toHaveTextContent("Starting the public demo");
-    expect(screen.getByText("Counts load when the demo API is awake.")).toBeInTheDocument();
+    // No data read is sent to an API that has not answered its health check.
+    expect(calls["/api/console/placements"]).toBeUndefined();
+    expect(screen.getByTestId("loading-panel")).toBeInTheDocument();
     expect(screen.queryByTestId("error-panel")).toBeNull();
 
-    await advance(5_000);
-    expect(screen.getByTestId("waking-panel")).toHaveTextContent("Waiting for the API · 5s");
+    await advance(4_000);
+    expect(screen.getByTestId("waking-panel")).toHaveTextContent("Starting the public demo");
+    expect(screen.getByText("Counts load when the demo API is awake.")).toBeInTheDocument();
 
-    await advance(5_000);
+    await advance(6_000);
 
     // The board the API actually returned: empty, and explained as empty.
     expect(screen.getByTestId("empty-panel")).toHaveTextContent("No placements on the desk.");
     expect(screen.queryByTestId("waking-panel")).toBeNull();
     expect(screen.queryByTestId("error-panel")).toBeNull();
-    // One shared watcher for the whole page, not one per panel.
+    // One shared watcher for the whole page, and one read per panel once it answered.
     expect(calls["/api/console/health"]).toBe(3);
-    expect(calls["/api/console/placements"]).toBe(2);
+    expect(calls["/api/console/placements"]).toBe(1);
+  });
+
+  it("costs one quick health check when the API is already awake", async () => {
+    const calls = scriptedConsole({
+      "/api/console/health": () => reply(200, { status: "alive" }),
+      "/api/console/placements": () => reply(200, [placement()]),
+      "/api/console/stats": () => reply(200, { by_state: {}, attempts: 0 }),
+    });
+
+    render(<Board />);
+    await advance(0);
+
+    expect(screen.getByTestId("placement-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("waking-panel")).toBeNull();
+    expect(calls["/api/console/health"]).toBe(1);
   });
 
   it("gives up after two and a half minutes with an honest error and a way to try again", async () => {
     const calls = scriptedConsole({
-      "/api/console/placements": () => reply(504, WAKING),
-      "/api/console/stats": () => reply(504, WAKING),
-      "/api/console/health": () => reply(504, WAKING),
+      "/api/console/health": () => reply(502, WAKING),
+      "/api/console/placements": () => reply(200, []),
+      "/api/console/stats": () => reply(200, { by_state: {}, attempts: 0 }),
     });
 
     render(<Board />);
@@ -99,6 +129,8 @@ describe("a sleeping demo API", () => {
     const alert = screen.getByTestId("error-panel");
     expect(alert).toHaveTextContent("did not wake within two and a half minutes");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    // Nothing was read from an API that never answered, and nothing was substituted.
+    expect(calls["/api/console/placements"]).toBeUndefined();
 
     // Bounded: no health check is sent once the limit has passed.
     const sent = calls["/api/console/health"];
@@ -107,19 +139,20 @@ describe("a sleeping demo API", () => {
   });
 
   it("does not wait when waiting cannot help, and shows the configuration error at once", async () => {
+    const unconfigured = reply(503, {
+      error: { kind: "unconfigured", message: "The console has no API address." },
+    });
     const calls = scriptedConsole({
-      "/api/console/placements": () =>
-        reply(503, {
-          error: { kind: "unconfigured", message: "The console has no API address." },
-        }),
-      "/api/console/stats": () => reply(200, { by_state: {}, attempts: 0 }),
+      "/api/console/health": () => unconfigured.clone(),
+      "/api/console/placements": () => unconfigured.clone(),
+      "/api/console/stats": () => unconfigured.clone(),
     });
 
     render(<Board />);
     await advance(0);
 
     expect(screen.getByTestId("error-panel")).toHaveTextContent("The console has no API address.");
-    expect(calls["/api/console/health"]).toBeUndefined();
+    expect(calls["/api/console/health"]).toBe(1);
   });
 });
 
@@ -152,5 +185,12 @@ describe("the console's proxy", () => {
     expect(missing.error).toMatchObject({ kind: "upstream", retryable: false });
 
     vi.unstubAllEnvs();
+  });
+
+  it("gives the health check a long enough wait to ride out a cold start", async () => {
+    const { WAKE_REQUEST_TIMEOUT_MS } = await import("@/lib/backend");
+    const route = await import("@/app/api/console/health/route");
+    expect(WAKE_REQUEST_TIMEOUT_MS).toBe(55_000);
+    expect(route.maxDuration).toBe(60);
   });
 });

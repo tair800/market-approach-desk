@@ -46,13 +46,19 @@ misconfigured API's stack trace or connection string would otherwise reach the b
 ## A sleeping API is waited out, not reported as broken
 
 The public demo's API runs on a free tier that sleeps when idle and takes up to about a minute to
-answer again. Each upstream read is still bounded at 8 seconds, but a timeout, an unreachable API or
-a host `429/502/503/504` is marked `retryable`, and a screen that meets one does not show an error:
-it shows **Starting the public demo…** and waits on one shared watcher (`lib/wake.ts`) that polls
-`/api/console/health` every 5 seconds — gently, because a host starting an instance answers 429 to a
-client that asks too often. When the health check answers, each screen asks for its data again and
-renders what the API returns. The wait is bounded at two and a half minutes; past that, the normal
-error panel appears with a **Try again** button. Nothing is cached or substituted to cover the wait.
+answer again. **Render wakes a sleeping instance only for a request that waits for it.** On the live
+demo, the console's 8-second reads were each abandoned before the instance started, the host
+answered the retries with 429, and the API stayed asleep for minutes, while a single direct request
+that waited was held for 42 seconds and woke it.
+
+So a screen does not read its data until the API has answered its health check once on the page.
+One shared watcher (`lib/wake.ts`) sends `/api/console/health`, which waits up to 55 seconds for the
+upstream (the route sets Vercel's 60-second `maxDuration`); a timeout, an unreachable API or a host
+`429/502/503/504` is marked `retryable` and checked again after 5 seconds. After a few seconds the
+screen says **Starting the public demo…** with the elapsed time. When the check answers, each screen
+reads its data, still bounded at 8 seconds, and renders what the API returns. The wait is bounded at
+two and a half minutes; past that, the normal error panel appears with a **Try again** button.
+Nothing is cached or substituted to cover the wait.
 
 ## The comparison screen's input
 

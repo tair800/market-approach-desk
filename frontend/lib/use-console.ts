@@ -3,7 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ConsoleError } from "@/lib/types";
-import { WAKE_FAILED, isRetryable, markAsleep, waitForBackend } from "@/lib/wake";
+import {
+  WAKE_FAILED,
+  WAKE_HINT_MS,
+  isRetryable,
+  markAsleep,
+  waitForBackend,
+  wakeState,
+} from "@/lib/wake";
 
 /**
  * One way to load one same-origin console resource.
@@ -11,9 +18,12 @@ import { WAKE_FAILED, isRetryable, markAsleep, waitForBackend } from "@/lib/wake
  * Every screen loads through this so that loading, empty and failure look the same everywhere. The
  * browser only ever names a `/api/console/*` path: the API's address stays on the server.
  *
- * A failure that means "the free-tier API is still waking" is not shown as a failure. The resource
- * goes to `waking`, waits on the page's one shared watcher (`lib/wake.ts`), and asks again once the
- * API answers its health check. The wait is bounded; past it, the real failure is shown.
+ * Until the API has answered its health check once on this page, a resource asks the page's one
+ * shared watcher (`lib/wake.ts`) first. A sleeping free-tier instance then receives one patient
+ * request that wakes it, rather than a burst of short reads that are each abandoned before it
+ * starts. If the check takes more than a few seconds the resource shows `waking`; once it answers,
+ * the resource reads its data. A later read that fails as if the API had gone back to sleep waits
+ * the same way. Every wait is bounded; past it, the real failure is shown.
  */
 
 export type Resource<T> =
@@ -75,6 +85,22 @@ export function useConsoleResource<T>(path: string): {
         setResource({ status: "loading" });
       }
       try {
+        if (wakeState().phase !== "awake") {
+          const notice = setTimeout(() => {
+            if (token === generation.current) {
+              setResource({ status: "waking" });
+            }
+          }, WAKE_HINT_MS);
+          const outcome = await waitForBackend();
+          clearTimeout(notice);
+          if (token !== generation.current) {
+            return;
+          }
+          if (outcome === "gave-up") {
+            setResource({ status: "failed", error: WAKE_FAILED });
+            return;
+          }
+        }
         let result = await attempt<T>(path);
         if (token !== generation.current) {
           return;

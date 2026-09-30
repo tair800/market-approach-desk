@@ -14,6 +14,16 @@ import type { ConsoleError } from "@/lib/types";
 
 const REQUEST_TIMEOUT_MS = 8_000;
 
+/**
+ * The health check's bound, and why it is long. Render wakes a sleeping free instance only for a
+ * request patient enough to wait for it: on the live demo, the console's 8-second reads were
+ * abandoned before the instance started, the host answered the retries with 429, and the API stayed
+ * asleep for minutes — while one direct request that waited was held for 42 seconds and woke it.
+ * So the health check waits up to 55 seconds, just under the 60-second function cap its route sets,
+ * and the screens only read data once it has answered.
+ */
+export const WAKE_REQUEST_TIMEOUT_MS = 55_000;
+
 /** Exactly the paths the console needs. An allowlist, so this can never become an open proxy. */
 export const CONSOLE_ROUTES = {
   placements: "/api/v1/placements",
@@ -52,7 +62,10 @@ function fail(error: ConsoleError, status: number): NextResponse {
  * misconfigured API would otherwise reach the browser through this handler, and the console's job
  * is to stay calm about an outage, not to narrate it.
  */
-export async function proxy(route: ConsoleRoute): Promise<NextResponse> {
+export async function proxy(
+  route: ConsoleRoute,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<NextResponse> {
   const base = baseUrl();
   if (base === null) {
     return fail(
@@ -70,7 +83,7 @@ export async function proxy(route: ConsoleRoute): Promise<NextResponse> {
     response = await fetch(`${base}${CONSOLE_ROUTES[route]}`, {
       cache: "no-store",
       headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (cause) {
     const timedOut = cause instanceof DOMException && cause.name === "TimeoutError";
@@ -78,7 +91,7 @@ export async function proxy(route: ConsoleRoute): Promise<NextResponse> {
       timedOut
         ? {
             kind: "timeout",
-            message: `The API did not answer within ${REQUEST_TIMEOUT_MS / 1000} seconds.`,
+            message: `The API did not answer within ${timeoutMs / 1000} seconds.`,
             retryable: true,
           }
         : {
