@@ -26,9 +26,10 @@ export const CONSOLE_ROUTES = {
 
 /**
  * Host answers that mean "not up yet" rather than "broken". A free-tier instance that is starting
- * is fronted by its host, which answers these until the process is listening.
+ * is fronted by its host, which answers these until the process is listening — including 429,
+ * which Render's edge was observed to return to the console for several minutes of a cold start.
  */
-const WAKING_STATUSES = new Set([502, 503, 504]);
+const WAKING_STATUSES = new Set([429, 502, 503, 504]);
 
 export type ConsoleRoute = keyof typeof CONSOLE_ROUTES;
 

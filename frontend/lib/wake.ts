@@ -18,9 +18,13 @@
 import type { ConsoleError } from "@/lib/types";
 
 /** The longest the console waits for the API to wake before it reports an honest failure. */
-export const WAKE_LIMIT_MS = 120_000;
-/** The pause between health checks. Each check is itself bounded by the route's own timeout. */
-export const WAKE_POLL_MS = 3_000;
+export const WAKE_LIMIT_MS = 150_000;
+/**
+ * The pause between health checks. Each check is itself bounded by the route's own timeout. Kept
+ * gentle on purpose: a host that is starting an instance answers 429 to a client that asks too
+ * often, and polling harder only lengthens the wait.
+ */
+export const WAKE_POLL_MS = 5_000;
 /** After this long, a loading panel says the API may be waking rather than just "loading". */
 export const WAKE_HINT_MS = 4_000;
 
@@ -62,7 +66,7 @@ export function isRetryable(error: ConsoleError): boolean {
 /** The failure a panel shows once the wake limit has passed. */
 export const WAKE_FAILED: ConsoleError = {
   kind: "timeout",
-  message: "The public demo's API did not wake within two minutes.",
+  message: "The public demo's API did not wake within two and a half minutes.",
 };
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));

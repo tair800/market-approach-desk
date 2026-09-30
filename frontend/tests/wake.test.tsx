@@ -69,10 +69,10 @@ describe("a sleeping demo API", () => {
     expect(screen.getByText("Counts load when the demo API is awake.")).toBeInTheDocument();
     expect(screen.queryByTestId("error-panel")).toBeNull();
 
-    await advance(3_000);
-    expect(screen.getByTestId("waking-panel")).toHaveTextContent("Waiting for the API · 3s");
+    await advance(5_000);
+    expect(screen.getByTestId("waking-panel")).toHaveTextContent("Waiting for the API · 5s");
 
-    await advance(3_000);
+    await advance(5_000);
 
     // The board the API actually returned: empty, and explained as empty.
     expect(screen.getByTestId("empty-panel")).toHaveTextContent("No placements on the desk.");
@@ -83,7 +83,7 @@ describe("a sleeping demo API", () => {
     expect(calls["/api/console/placements"]).toBe(2);
   });
 
-  it("gives up after two minutes with an honest error and a way to try again", async () => {
+  it("gives up after two and a half minutes with an honest error and a way to try again", async () => {
     const calls = scriptedConsole({
       "/api/console/placements": () => reply(504, WAKING),
       "/api/console/stats": () => reply(504, WAKING),
@@ -92,12 +92,12 @@ describe("a sleeping demo API", () => {
 
     render(<Board />);
     await advance(0);
-    await advance(119_000);
+    await advance(149_000);
     expect(screen.getByTestId("waking-panel")).toBeInTheDocument();
 
-    await advance(3_000);
+    await advance(5_000);
     const alert = screen.getByTestId("error-panel");
-    expect(alert).toHaveTextContent("did not wake within two minutes");
+    expect(alert).toHaveTextContent("did not wake within two and a half minutes");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
 
     // Bounded: no health check is sent once the limit has passed.
@@ -134,13 +134,18 @@ describe("a slow first answer", () => {
 });
 
 describe("the console's proxy", () => {
-  it("marks a host's 503 as retryable and a 404 as not", async () => {
+  it("marks a host's 429 and 503 as retryable and a 404 as not", async () => {
     vi.stubEnv("APPROACH_API_BASE_URL", "https://api.example.test");
     const { proxy } = await import("@/lib/backend");
 
     vi.stubGlobal("fetch", vi.fn(async () => new Response("waking", { status: 503 })));
     const waking = await (await proxy("health")).json();
     expect(waking.error).toMatchObject({ kind: "upstream", retryable: true });
+
+    // Render's edge answered 429 to the console for several minutes of a real cold start.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("slow down", { status: 429 })));
+    const throttled = await (await proxy("health")).json();
+    expect(throttled.error).toMatchObject({ kind: "upstream", retryable: true });
 
     vi.stubGlobal("fetch", vi.fn(async () => new Response("missing", { status: 404 })));
     const missing = await (await proxy("health")).json();

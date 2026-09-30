@@ -73,7 +73,7 @@ export interface ConsoleError {
   message: string;
   /**
    * True when waiting may fix it: the API timed out, could not be reached, or its host answered
-   * 502/503/504 — which is what a free-tier API looks like while it wakes from sleep.
+   * 429/502/503/504 — which is what a free-tier API looks like while it wakes from sleep.
    */
   retryable?: boolean;
 }
