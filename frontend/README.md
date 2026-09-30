@@ -28,19 +28,30 @@ npm test                       # vitest
 not prefixed `NEXT_PUBLIC_` and must never be listed under `env` in `next.config.ts`; either would
 inline it into the client bundle.
 
-The browser only ever names a same-origin path. Four route handlers under `app/api/console/` proxy
-an allowlist of four upstream reads:
+The browser only ever names a same-origin path. Five route handlers under `app/api/console/` proxy
+an allowlist of five upstream reads:
 
 ```
 /api/console/placements  ->  GET /api/v1/placements
 /api/console/audit       ->  GET /api/v1/audit?limit=100
 /api/console/stats       ->  GET /api/v1/stats
 /api/console/meta        ->  GET /api/v1/meta
+/api/console/health      ->  GET /healthz
 ```
 
 The allowlist is the point: the proxy cannot be pointed at an arbitrary upstream path. On failure it
-returns `{"error": {"kind", "message"}}` and forwards **no** upstream body — a misconfigured API's
-stack trace or connection string would otherwise reach the browser through it.
+returns `{"error": {"kind", "message", "retryable"}}` and forwards **no** upstream body — a
+misconfigured API's stack trace or connection string would otherwise reach the browser through it.
+
+## A sleeping API is waited out, not reported as broken
+
+The public demo's API runs on a free tier that sleeps when idle and takes up to about a minute to
+answer again. Each upstream read is still bounded at 8 seconds, but a timeout, an unreachable API or
+a host `502/503/504` is marked `retryable`, and a screen that meets one does not show an error: it
+shows **Starting the public demo…** and waits on one shared watcher (`lib/wake.ts`) that polls
+`/api/console/health` every 3 seconds. When the health check answers, each screen asks for its data
+again and renders what the API returns. The wait is bounded at two minutes; past that, the normal
+error panel appears with a **Try again** button. Nothing is cached or substituted to cover the wait.
 
 ## The comparison screen's input
 

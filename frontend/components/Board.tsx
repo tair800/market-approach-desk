@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { ApproachMatrix } from "@/components/ApproachMatrix";
-import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/panels";
+import { EmptyPanel, ErrorPanel, LoadingPanel, WakingPanel } from "@/components/panels";
 import { RefreshBar } from "@/components/RefreshBar";
 import { StatsStrip } from "@/components/StatsStrip";
 import { formatDate } from "@/lib/states";
@@ -77,6 +77,7 @@ export function Board(): ReactNode {
         onReload={reload}
       />
       {resource.status === "loading" ? <LoadingPanel label="the board" /> : null}
+      {resource.status === "waking" ? <WakingPanel label="The board" /> : null}
       {resource.status === "failed" ? <ErrorPanel error={resource.error} onRetry={reload} /> : null}
       {resource.status === "ready" ? <BoardView placements={resource.data} /> : null}
     </div>

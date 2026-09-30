@@ -20,7 +20,15 @@ export const CONSOLE_ROUTES = {
   audit: "/api/v1/audit?limit=100",
   stats: "/api/v1/stats",
   meta: "/api/v1/meta",
+  // The API's liveness check, polled while a sleeping free-tier instance wakes (`lib/wake.ts`).
+  health: "/healthz",
 } as const;
+
+/**
+ * Host answers that mean "not up yet" rather than "broken". A free-tier instance that is starting
+ * is fronted by its host, which answers these until the process is listening.
+ */
+const WAKING_STATUSES = new Set([502, 503, 504]);
 
 export type ConsoleRoute = keyof typeof CONSOLE_ROUTES;
 
@@ -70,10 +78,12 @@ export async function proxy(route: ConsoleRoute): Promise<NextResponse> {
         ? {
             kind: "timeout",
             message: `The API did not answer within ${REQUEST_TIMEOUT_MS / 1000} seconds.`,
+            retryable: true,
           }
         : {
             kind: "unreachable",
             message: "The API is not reachable from the console right now.",
+            retryable: true,
           },
       504,
     );
@@ -84,6 +94,7 @@ export async function proxy(route: ConsoleRoute): Promise<NextResponse> {
       {
         kind: "upstream",
         message: `The API answered ${response.status}.`,
+        retryable: WAKING_STATUSES.has(response.status),
       },
       502,
     );

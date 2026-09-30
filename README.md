@@ -47,8 +47,10 @@ Read this before drawing conclusions from what is on the screen:
   than a proof of unreachability; see [`PROJECT_STATUS.md`](PROJECT_STATUS.md) for what it does and
   does not catch.
 - **Free tier, so the first request is slow.** The Render instance spins down when idle and a cold
-  start delays the first request by roughly 50 seconds; load it once more and it answers normally.
-  Neon's free compute also scales to zero and wakes in a second or two.
+  start delays the first request by roughly 50 seconds. The console waits it out rather than
+  reporting an error: it shows *Starting the public demo…*, polls the API's health check for up to
+  two minutes, and loads the board as soon as the API answers. Neon's free compute also scales to
+  zero and wakes in a second or two.
 - **The deployment shows a board in a state, not the mechanism that reaches it.** The seeder inserts
   rows directly rather than driving them through `claim()` and the scheduler, so two things on the
   live site follow from the fixture rather than from a run: the **audit screen is empty**, and the

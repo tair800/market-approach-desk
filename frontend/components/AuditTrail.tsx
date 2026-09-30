@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { EmptyPanel, ErrorPanel, LoadingPanel } from "@/components/panels";
+import { EmptyPanel, ErrorPanel, LoadingPanel, WakingPanel } from "@/components/panels";
 import { RefreshBar } from "@/components/RefreshBar";
 import { formatInstant } from "@/lib/states";
 import type { AuditView } from "@/lib/types";
@@ -66,6 +66,7 @@ export function AuditTrail(): ReactNode {
         onReload={reload}
       />
       {resource.status === "loading" ? <LoadingPanel label="the audit trail" /> : null}
+      {resource.status === "waking" ? <WakingPanel label="The audit trail" /> : null}
       {resource.status === "failed" ? <ErrorPanel error={resource.error} onRetry={reload} /> : null}
       {resource.status === "ready" ? <AuditTrailView events={resource.data} /> : null}
     </div>

@@ -50,6 +50,11 @@ export function StatsStrip(): ReactNode {
   if (resource.status === "loading") {
     return <div className="panel px-4 py-2.5 text-dim">Counting approaches…</div>;
   }
+  if (resource.status === "waking") {
+    return (
+      <div className="panel px-4 py-2.5 text-dim">Counts load when the demo API is awake.</div>
+    );
+  }
   if (resource.status === "failed") {
     return <div className="panel px-4 py-2.5 text-dim">Counts unavailable.</div>;
   }
