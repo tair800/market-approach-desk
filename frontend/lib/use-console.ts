@@ -37,6 +37,18 @@ const GENERIC_FAILURE: ConsoleError = {
   message: "The console could not reach its own server. Check the network and reload.",
 };
 
+const ERROR_KINDS: readonly ConsoleError["kind"][] = [
+  "unconfigured",
+  "unreachable",
+  "timeout",
+  "upstream",
+  "malformed",
+];
+
+function isErrorKind(value: unknown): value is ConsoleError["kind"] {
+  return typeof value === "string" && (ERROR_KINDS as readonly string[]).includes(value);
+}
+
 function readError(payload: unknown): ConsoleError {
   if (typeof payload === "object" && payload !== null && "error" in payload) {
     const error = (payload as { error: unknown }).error;
@@ -44,7 +56,7 @@ function readError(payload: unknown): ConsoleError {
       const shaped = error as Record<string, unknown>;
       if (typeof shaped.message === "string") {
         return {
-          kind: (shaped.kind as ConsoleError["kind"]) ?? "upstream",
+          kind: isErrorKind(shaped.kind) ? shaped.kind : "upstream",
           message: shaped.message,
           retryable: shaped.retryable === true,
         };
