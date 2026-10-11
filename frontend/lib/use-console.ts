@@ -73,6 +73,9 @@ async function attempt<T>(path: string): Promise<Attempt<T>> {
     const response = await fetch(path, { cache: "no-store" });
     const payload: unknown = await response.json().catch(() => null);
     if (!response.ok) return { ok: false, error: readError(payload) };
+    if (typeof payload !== "object" || payload === null) {
+      return { ok: false, error: GENERIC_FAILURE };
+    }
     return { ok: true, data: payload as T };
   } catch {
     return { ok: false, error: GENERIC_FAILURE };
