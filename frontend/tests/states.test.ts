@@ -41,6 +41,15 @@ describe("approach state badges", () => {
     expect(new Set(classes).size).toBe(SERVER_STATES.length);
   });
 
+  it("carries the label, class and title both consumers read", () => {
+    for (const state of SERVER_STATES) {
+      const spec = approachStateBadge(state);
+      expect(spec.label, `${state} label`).not.toBe("");
+      expect(spec.className, `${state} class`).not.toBe("");
+      expect(spec.title, `${state} title`).not.toBe("");
+    }
+  });
+
   it("shows an unrecognised state rather than swallowing it", () => {
     const badge = approachStateBadge("quarantined");
     expect(badge.label).toBe("quarantined");
