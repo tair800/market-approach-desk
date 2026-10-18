@@ -30,9 +30,10 @@ export function StatsStripView({ stats }: { stats: StatsView }): ReactNode {
       </span>
       {states.map((state) => (
         <span key={state} className="inline-flex items-center gap-1.5 tabular-nums">
-          <span className={approachStateBadge(state).className}>
+          <span className={approachStateBadge(state).className} aria-hidden="true">
             {approachStateBadge(state).label}
           </span>
+          <span className="sr-only">{approachStateBadge(state).label}</span>
           <span className="font-semibold">{stats.by_state[state]}</span>
         </span>
       ))}
