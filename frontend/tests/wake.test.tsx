@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Board } from "@/components/Board";
@@ -96,6 +96,45 @@ describe("a sleeping demo API", () => {
     // One shared watcher for the whole page, and one read per panel once it answered.
     expect(calls["/api/console/health"]).toBe(3);
     expect(calls["/api/console/placements"]).toBe(1);
+  });
+
+  it("keeps the ticking wait out of the part a screen reader announces", async () => {
+    scriptedConsole({
+      "/api/console/health": () => reply(502, WAKING),
+      "/api/console/placements": () => reply(200, []),
+      "/api/console/stats": () => reply(200, { by_state: {}, attempts: 0 }),
+    });
+    // Live regions whose content was added after they were already on the page.
+    const filledLater: Element[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        const target = record.target;
+        if (target instanceof Element && target.getAttribute("role") === "status") {
+          if (record.addedNodes.length > 0) filledLater.push(target);
+        }
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    render(<Board />);
+    await advance(0);
+    await advance(4_000);
+
+    const panel = screen.getByTestId("waking-panel");
+    const announced = within(panel).getByRole("status");
+    expect(announced).toHaveTextContent("Starting the public demo");
+    // The message arrives as a change to a region already on the page, not with the region.
+    expect(filledLater).toContain(announced);
+
+    const message = announced.textContent;
+    const counter = within(panel).getByText(/Waiting for the API · \d+s/);
+    const waited = counter.textContent;
+    await advance(3_000);
+    observer.disconnect();
+
+    expect(announced.textContent).toBe(message);
+    expect(announced).not.toHaveTextContent(/Waiting for the API/);
+    expect(counter.textContent).not.toBe(waited);
   });
 
   it("costs one quick health check when the API is already awake", async () => {

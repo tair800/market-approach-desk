@@ -50,23 +50,30 @@ export function LoadingPanel({ label }: { label: string }): ReactNode {
  * Says what is happening, how long it has taken, and that nothing needs to be done. It does not
  * show a retry button: the wait continues by itself, and a button would suggest the visitor has to
  * do something to make the demo work.
+ *
+ * The live region holds the message only. The elapsed time sits outside it, so its ticks are not
+ * announced; and the message is added after the region is on the page, because a region inserted
+ * with its text already in place is not reliably announced.
  */
 export function WakingPanel({ label }: { label: string }): ReactNode {
   const wake = useSyncExternalStore(subscribeWake, wakeState, wakeState);
   const seconds = useSecondsSince(wake.startedAt);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   return (
-    <div
-      className="panel px-4 py-5"
-      role="status"
-      aria-live="polite"
-      data-testid="waking-panel"
-    >
-      <p className="font-semibold text-text">Starting the public demo…</p>
-      <p className="mt-1 max-w-2xl text-muted">
-        The demo&apos;s API runs on a free tier that sleeps after about fifteen minutes without
-        visitors and can take up to a minute to wake. {label} will load here as soon as it answers —
-        there is nothing you need to do.
-      </p>
+    <div className="panel px-4 py-5" data-testid="waking-panel">
+      <div role="status" aria-live="polite">
+        {mounted ? (
+          <>
+            <p className="font-semibold text-text">Starting the public demo…</p>
+            <p className="mt-1 max-w-2xl text-muted">
+              The demo&apos;s API runs on a free tier that sleeps after about fifteen minutes
+              without visitors and can take up to a minute to wake. {label} will load here as soon
+              as it answers — there is nothing you need to do.
+            </p>
+          </>
+        ) : null}
+      </div>
       <p className="text-dim mt-2 tabular-nums">Waiting for the API · {seconds}s</p>
     </div>
   );
