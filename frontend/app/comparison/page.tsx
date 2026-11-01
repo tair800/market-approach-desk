@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { KillTestPanel } from "@/components/KillTestPanel";
+
+export const metadata: Metadata = {
+  title: "Comparison · Market approach desk",
+};
 
 export default function ComparisonPage(): ReactNode {
   return (

@@ -1,6 +1,11 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import { AuditTrail } from "@/components/AuditTrail";
+
+export const metadata: Metadata = {
+  title: "Audit · Market approach desk",
+};
 
 export default function AuditPage(): ReactNode {
   return (

@@ -1,6 +1,8 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { metadata as auditMetadata } from "@/app/audit/page";
+import { metadata as comparisonMetadata } from "@/app/comparison/page";
 import { AuditTrailView } from "@/components/AuditTrail";
 import { BoardView } from "@/components/Board";
 import { KillTestPanel } from "@/components/KillTestPanel";
@@ -112,5 +114,13 @@ describe("the comparison screen before a run", () => {
       "At most one approach per identity",
     );
     expect(screen.getByText("p-1/m-1/initial")).toBeInTheDocument();
+  });
+});
+
+describe("screen titles", () => {
+  it("names each screen in the browser title, not only the console", () => {
+    expect(auditMetadata.title).toBe("Audit · Market approach desk");
+    expect(comparisonMetadata.title).toBe("Comparison · Market approach desk");
+    expect(auditMetadata.title).not.toBe(comparisonMetadata.title);
   });
 });
