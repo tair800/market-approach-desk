@@ -43,12 +43,27 @@ const WAKING_STATUSES = new Set([429, 502, 503, 504]);
 
 export type ConsoleRoute = keyof typeof CONSOLE_ROUTES;
 
+/**
+ * The API address, or null when it is unset, blank, or not an http or https URL. `fetch` rejects a
+ * bare host such as `api.example.test`, a `host:port` pair (which parses with the host as its
+ * scheme) and most other schemes before a request is sent, and that would read as an outage worth
+ * waiting out instead of the configuration error it is.
+ */
 function baseUrl(): string | null {
   const raw = process.env.APPROACH_API_BASE_URL?.trim();
-  if (!raw) {
+  if (!raw || !isHttpUrl(raw)) {
     return null;
   }
   return raw.replace(/\/+$/, "");
+}
+
+function isHttpUrl(address: string): boolean {
+  try {
+    const { protocol } = new URL(address);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 function fail(error: ConsoleError, status: number): NextResponse {
@@ -71,8 +86,7 @@ export async function proxy(
     return fail(
       {
         kind: "unconfigured",
-        message:
-          "The console has no API address. Set APPROACH_API_BASE_URL in the console environment.",
+        message: "APPROACH_API_BASE_URL is not set to a valid http or https URL.",
       },
       503,
     );
