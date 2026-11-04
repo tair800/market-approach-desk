@@ -11,6 +11,7 @@ import type { PlacementView } from "@/lib/types";
 import { useConsoleResource } from "@/lib/use-console";
 
 function PlacementPanel({ placement }: { placement: PlacementView }): ReactNode {
+  const carriers = new Set(placement.approaches.map((approach) => approach.market.id)).size;
   const overdue = placement.approaches.filter((approach) => approach.follow_up_overdue).length;
   const blocked = placement.approaches.filter((approach) => approach.state === "blocked").length;
 
@@ -27,8 +28,8 @@ function PlacementPanel({ placement }: { placement: PlacementView }): ReactNode 
         <span className="text-dim">inception {formatDate(placement.inception_on)}</span>
         <span className="ml-auto flex items-center gap-3 tabular-nums">
           <span className="text-muted">
-            {placement.approaches.length}{" "}
-            {placement.approaches.length === 1 ? "carrier" : "carriers"}
+            {carriers}{" "}
+            {carriers === 1 ? "carrier" : "carriers"}
           </span>
           {overdue > 0 ? (
             <span className="font-semibold text-[#f2b756]">{overdue} overdue</span>
