@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Board } from "@/components/Board";
 import { LoadingPanel } from "@/components/panels";
+import { proxy as consoleProxy } from "@/lib/backend";
 import { resetWake } from "@/lib/wake";
 import type { PlacementView } from "@/lib/types";
 import { approach } from "./fixtures";
@@ -223,6 +224,31 @@ describe("the console's proxy", () => {
     const missing = await (await proxy("health")).json();
     expect(missing.error).toMatchObject({ kind: "upstream", retryable: false });
 
+    vi.unstubAllEnvs();
+  });
+
+  it("answers an API address without an http or https scheme as unconfigured", async () => {
+    // What fetch does with such an address: it rejects before any request is sent.
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    for (const address of ["api.example.test", "localhost:8000", "ftp://api.example.test"]) {
+      vi.stubEnv("APPROACH_API_BASE_URL", address);
+      const answer = await consoleProxy("health");
+      expect(answer.status, address).toBe(503);
+      expect((await answer.json()).error).toMatchObject({ kind: "unconfigured" });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
+  it("still calls an http address, without its trailing slash", async () => {
+    vi.stubEnv("APPROACH_API_BASE_URL", "http://localhost:8000/");
+    const fetchMock = vi.fn(async () => reply(200, { status: "alive" }));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await consoleProxy("health")).status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledWith("http://localhost:8000/healthz", expect.anything());
     vi.unstubAllEnvs();
   });
 
