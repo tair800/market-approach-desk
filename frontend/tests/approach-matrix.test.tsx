@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import { ApproachMatrix, ApproachRow } from "@/components/ApproachMatrix";
+import { BoardView } from "@/components/Board";
+import type { ApproachView } from "@/lib/types";
 
 import { approach } from "./fixtures";
 
@@ -99,5 +101,55 @@ describe("the matrix", () => {
   it("says so when a placement has no panel yet", () => {
     render(<ApproachMatrix approaches={[]} />);
     expect(screen.getByTestId("no-approaches")).toHaveTextContent("No carriers on the panel");
+  });
+});
+
+describe("the placement header", () => {
+  function renderPlacement(approaches: ApproachView[]) {
+    render(
+      <BoardView
+        placements={[
+          {
+            id: "p1",
+            reference: "PL-TEST-0001",
+            insured_name: "Test Insured",
+            class_of_business: "Marine cargo",
+            handler: "test.handler",
+            inception_on: "2026-10-01",
+            approaches,
+          },
+        ]}
+      />,
+    );
+    return screen.getByTestId("placement-panel");
+  }
+
+  it("counts a carrier approached at two stages once", () => {
+    const panel = renderPlacement([
+      approach({ id: "a1", stage: "initial", state: "blocked" }),
+      approach({ id: "a2", stage: "revised_terms", state: "sent" }),
+    ]);
+
+    expect(within(panel).getAllByTestId("approach-row")).toHaveLength(2);
+    expect(within(panel).getByText("1 carrier")).toBeInTheDocument();
+  });
+
+  it("counts each carrier on the panel once, however many stages it is at", () => {
+    const panel = renderPlacement([
+      approach({ id: "a1", stage: "initial" }),
+      approach({ id: "a2", stage: "revised_terms" }),
+      approach({
+        id: "a3",
+        market: {
+          id: "m2",
+          name: "Harbour Lane Re",
+          underwriter: "T. Vance",
+          within_placing_authority: true,
+        },
+      }),
+    ]);
+
+    expect(within(panel).getAllByTestId("approach-row")).toHaveLength(3);
+    expect(within(panel).getByText("2 carriers")).toBeInTheDocument();
   });
 });
